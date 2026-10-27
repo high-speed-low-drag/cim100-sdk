@@ -31,8 +31,18 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | P | Plan (docs/PLAN.md) | done | (this commit) |
 | M0 | Scaffold | done | f761be9 |
 | M1 | Model fetch | done | e7853ca |
-| M2 | EA reader + IR | done | (see git log: "M2: EA reader and intermediate representation") |
+| M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
 | M3 | Normalize | todo | |
 | M4 | Runtime | todo | |
 | M5 | Generator | todo | |
 | M6 | Generated package + tests | todo | |
+
+## Review notes
+- M2 review (sonnet, independent; PASS WITH NITS):
+  - Six asymmetric associations from IEC61968, IEC62325 and IEC61970 were checked against the raw t_connector rows; all match.
+  - The reader drops nothing in scope.
+  - Notes for M3:
+    - Key classes by GUID, not name: TroubleReportingKind appears twice in the same package.
+    - There are 14 self-associations.
+    - Don't rely on `navigable`.
+    - `0..0` would be rejected; the model has none.
