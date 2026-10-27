@@ -79,12 +79,28 @@ def test_superclasses(ir, by_guid):
     check(f)
 
 
-def _default_ok(meta, ir_attr, by_guid) -> bool:
+# IR defaults that cannot be represented in the SDK because the model itself is inconsistent.
+# Each entry is (class CIM name, attribute CIM name) and the SDK default must then be None.
+KNOWN_MODEL_QUIRKS = {
+    # IR default is 'g' but the UnitSymbol enumeration has no 'g' literal (only 'kg').
+    ("Mass", "unit"),
+}
+USED_QUIRKS: set[tuple[str, str]] = set()
+
+
+def _default_ok(cname, meta, ir_attr, by_guid) -> bool:
     if ir_attr.default is None:
+        return meta.default is None
+    if (cname, ir_attr.name) in KNOWN_MODEL_QUIRKS:
+        USED_QUIRKS.add((cname, ir_attr.name))
         return meta.default is None
     if meta.kind == "enumeration":
         return isinstance(meta.default, CimEnum) and meta.default.value == ir_attr.default and (
             type(meta.default) is by_guid[ir_attr.type_guid]
+        )
+    if meta.py_type == "date":
+        return (
+            type(meta.default) is datetime.date and meta.default == datetime.date.fromisoformat(ir_attr.default)
         )
     return str(meta.default) == ir_attr.default or repr(meta.default).strip("'\"") == ir_attr.default.strip("'\"")
 
@@ -110,8 +126,9 @@ def test_attributes(ir, by_guid, ir_classifiers):
                 a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated
             ):
                 f.append(f"{c.name}.{a.name}: {(m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated)} != {(a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated)}")
-            if not _default_ok(m, a, by_guid):
+            if not _default_ok(c.name, m, a, by_guid):
                 f.append(f"{c.name}.{a.name}: default {m.default!r} != IR {a.default!r}")
+    assert USED_QUIRKS == KNOWN_MODEL_QUIRKS, "stale entries in KNOWN_MODEL_QUIRKS"
     check(f)
 
 
@@ -160,7 +177,6 @@ def test_associations_produce_two_ends(ir, by_guid, resolved):
             if m is None:
                 f.append(f"{owner.__name__}.{r.py_name}: end not generated on owner")
                 continue
-            want_role = end.role if end.role is not None else None
             if end.role is not None and m.cim_role != end.role:
                 f.append(f"{owner.__name__}.{m.name}: cim_role {m.cim_role!r} != {end.role!r}")
             if end.role is None and m.cim_role not in (None, r.py_name) and not r.generated_role:
@@ -170,7 +186,6 @@ def test_associations_produce_two_ends(ir, by_guid, resolved):
             many = end.upper is None or end.upper > 1
             if (m.lower, m.upper, m.many) != (end.lower, end.upper, many):
                 f.append(f"{owner.__name__}.{m.name}: card {(m.lower, m.upper, m.many)} != {(end.lower, end.upper, many)}")
-            del want_role
     assert n == 2748
     actual = {(cls._cim_meta.guid, e.name) for cls in by_guid.values() for e in cls._cim_meta.ends}
     if actual != expected_keys:
