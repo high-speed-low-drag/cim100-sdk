@@ -61,3 +61,4 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - Deviation from Decision 2: default mRID is `new_mrid()` (UUID4 string from a private PRNG seeded by os.urandom, ~1 us) instead of `str(uuid4())` (~6 us + 7 ms `import uuid`).
   - mypy is clean on the runtime and mini model (`uv run --with mypy`, not a project dependency).
   - Notes for M5: `__slots__` must be naturally sorted (ruff RUF023); `_cim_meta` on enums needs `enum.nonmember`; all 405 enums build on `CimEnum`; alias imports when two referenced classes share a py_name; overrides get `# type: ignore[assignment]` when the annotation differs.
+- M4 (95bdfad), orchestrator decision: accept `new_mrid()` (a fast UUID4 string from a private PRNG seeded from os.urandom and reseeded after fork) instead of `str(uuid4())`. mRIDs are identifiers, not secrets. The format is still a valid UUID4. Review agent launched (sonnet).

@@ -46,7 +46,7 @@ _set = object.__setattr__
 class AttrMeta(_Frozen):
     """One UML attribute. Attributes typed by a CIMDatatype hold the plain value."""
 
-    __slots__ = ("name", "cim_name", "py_type", "lower", "upper", "kind", "default", "static")  # noqa: RUF023
+    __slots__ = ("name", "cim_name", "py_type", "lower", "upper", "kind", "default", "static", "deprecated")  # noqa: RUF023
 
     name: str  # Python attribute name
     cim_name: str
@@ -56,6 +56,7 @@ class AttrMeta(_Frozen):
     kind: str  # primitive / cimdatatype / enumeration / compound
     default: Any  # the Python default value (enum member, number, str) or None
     static: bool  # class-level constant: not a slot and not an __init__ parameter
+    deprecated: bool
 
     def __init__(
         self,
@@ -67,6 +68,7 @@ class AttrMeta(_Frozen):
         kind: str,
         default: Any = None,
         static: bool = False,
+        deprecated: bool = False,
     ) -> None:
         _set(self, "name", name)
         _set(self, "cim_name", cim_name)
@@ -76,12 +78,13 @@ class AttrMeta(_Frozen):
         _set(self, "kind", kind)
         _set(self, "default", default)
         _set(self, "static", static)
+        _set(self, "deprecated", deprecated)
 
 
 class EndMeta(_Frozen):
     """One association end owned by a class."""
 
-    __slots__ = ("name", "cim_role", "target", "many", "lower", "upper", "inverse", "aggregation")  # noqa: RUF023
+    __slots__ = ("name", "cim_role", "target", "many", "lower", "upper", "inverse", "aggregation", "deprecated")  # noqa: RUF023
 
     name: str  # Python attribute name of the end
     cim_role: str | None
@@ -91,6 +94,7 @@ class EndMeta(_Frozen):
     upper: int | None
     inverse: str  # Python name of the end on the target class that points back
     aggregation: str  # none / shared / composite
+    deprecated: bool
 
     def __init__(
         self,
@@ -102,6 +106,7 @@ class EndMeta(_Frozen):
         upper: int | None,
         inverse: str,
         aggregation: str = "none",
+        deprecated: bool = False,
     ) -> None:
         _set(self, "name", name)
         _set(self, "cim_role", cim_role)
@@ -111,6 +116,7 @@ class EndMeta(_Frozen):
         _set(self, "upper", upper)
         _set(self, "inverse", inverse)
         _set(self, "aggregation", aggregation)
+        _set(self, "deprecated", deprecated)
 
 
 class ClassMeta(_Frozen):

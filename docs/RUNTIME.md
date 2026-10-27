@@ -31,6 +31,23 @@ item raises `ValueError`. Inverses are maintained by one-sided primitives, so no
 recurses. Lower/upper bounds are only reported by `validate()`. The runtime is not
 thread-safe (like plain Python containers under concurrent mutation).
 
+Construction is atomic per end: `Many.extend` type-checks every item before linking any, so
+`ConductingEquipment(terminals=[t, 5])` raises `TypeError` and `t` stays unlinked. (Across
+different ends of one `__init__`, earlier ends are already linked when a later one fails.)
+A target that cannot be imported raises `RuntimeError("<Owner>.<end>: cannot resolve target
+'<ref>'")` chained (`__cause__`) to the original error.
+
+Copying: `copy.deepcopy` and `pickle` are supported, including cyclic graphs and
+self-associations; the copy is a separate, consistent graph (Many dicts are rebuilt with the
+new `id()` keys in `__setstate__`). Only the slot values are copied, so any class that follows
+rule 3 works. `copy.copy` (shallow) raises `TypeError` telling the user to use `deepcopy`,
+because a shallow copy would share half-links with the original graph.
+
+Memory: links are strong in both directions, so a graph is freed only by the cyclic GC (not
+by refcounting alone). `CimObject` has a `__weakref__` slot (a pointer, measured +16 B per object), so
+instances can be weakly referenced. Class-level caches (`_checks`, metas, resolved targets)
+hold classes, never instances.
+
 ## Rules for a generated class module
 
 1. Header: module docstring, `from __future__ import annotations`, then **runtime imports**:
@@ -46,13 +63,16 @@ thread-safe (like plain Python containers under concurrent mutation).
    their slot descriptors shadow such names in the class namespace. A CIMDatatype attribute is
    annotated with its `value_py_type` plus a trailing `# <Datatype>` comment; it holds the plain value.
 3. `__slots__`: a tuple, naturally sorted (ruff RUF023), with the class's **own** non-static
-   attribute names plus `_<end name>` for each own association end. Nothing else.
+   attribute names plus `_<end name>` for each own association end. Nothing else: never an
+   override (it reuses the parent's slot) and never an inherited member.
 4. Class body order: `__slots__`, attribute annotations, end descriptors
    (`name: One[T] = One(EndMeta(...))` / `Many[T] = Many(...)`, all `EndMeta` fields as
    keywords, `target` = the target's `"module:ClassName"`), `_cim_meta`, `__init__`, methods.
    `_cim_meta = ClassMeta(cim_name, package, guid, [kind], [deprecated=True], attributes=(AttrMeta(...), ...), ends=(<end>.meta, ...))`.
    `AttrMeta` is positional: `name, cim_name, py_type, lower, upper, kind`, then `default` and
    `static=True` only when set. `py_type` is `RAttribute.py_type`, `kind` is `type_kind`.
+   A deprecated attribute or end adds `deprecated=True` (keyword, only when true) to its
+   `AttrMeta` / `EndMeta`, as for `ClassMeta`; the flag is metadata only, the runtime ignores it.
 5. `__init__(self, *, <own attributes>, <own ends>, **kwargs: Any) -> None`, in the order of
    `RClass.attributes` then `RClass.ends`, every parameter defaulting to the model default or
    `None`. Body: `super().__init__(**kwargs)`, then `self.<attr> = <attr>` for each attribute,
@@ -65,7 +85,15 @@ thread-safe (like plain Python containers under concurrent mutation).
    `.get_by_mrid(self, mrid)`. `add/remove/clear` return `Self`.
 7. Static attributes (`is_static`, e.g. `IEC61970CIMVersion.version`): `name: ClassVar[T] = <default or None>`;
    no slot, no `__init__` parameter; `AttrMeta(..., static=True)`.
-8. Formatting: output is `ruff format`-stable (M5 may simply run `ruff format` on it). The mini
+8. Empty class: no own attributes, no own ends and no overrides. Emit `__slots__ = ()` and
+   `_cim_meta` (no `attributes=` / `ends=`) and **omit `__init__`** (the superclass one is
+   inherited); see `Conductor` below. A class with only an override is not empty (see Facility).
+9. A superclass in another package is imported by its absolute module path, e.g.
+   `from cim100.model.iec61970.base.core.identified_object import IdentifiedObject`.
+10. Names: every Python name (members, methods, item names) comes precomputed from
+    `codegen/normalize.py` (`RAttribute.py_name`, `RAssocEnd.py_name` / `item_name` / `methods`).
+    The generator must never derive names itself; M3 has already resolved collisions.
+11. Formatting: output is `ruff format`-stable (M5 may simply run `ruff format` on it). The mini
    model is mypy-clean: `MYPYPATH=. uv run --with mypy mypy src/cim100/_runtime tests/runtime/minimodel`.
 
 ## Example: ConductingEquipment (attributes, a Many end, all methods)
@@ -142,6 +170,30 @@ class ConductingEquipment(PowerSystemResource):
 
     def get_terminal_by_mrid(self, mrid: str) -> Terminal | None:
         return ConductingEquipment.terminals.get_by_mrid(self, mrid)
+```
+
+## Empty class (Conductor)
+
+<!-- file: tests/runtime/minimodel/conductor.py -->
+```python
+"""CIM class Conductor (TC57CIM/IEC61970/Base/Wires). Generated code: do not edit."""
+
+from __future__ import annotations
+
+from cim100._runtime import ClassMeta
+from tests.runtime.minimodel.conducting_equipment import ConductingEquipment
+
+
+class Conductor(ConductingEquipment):
+    """Combination of conducting material with consistent electrical characteristics."""
+
+    __slots__ = ()
+
+    _cim_meta = ClassMeta(
+        cim_name="Conductor",
+        package="TC57CIM/IEC61970/Base/Wires",
+        guid="{00000000-0000-0000-0000-00000000C008}",
+    )
 ```
 
 ## Single-valued end (Terminal)

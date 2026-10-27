@@ -16,4 +16,5 @@ REGISTRY: dict[str, str] = {
     "{00000000-0000-0000-0000-00000000C005}": "tests.runtime.minimodel.asset:Asset",
     "{00000000-0000-0000-0000-00000000C006}": "tests.runtime.minimodel.facility:Facility",
     "{00000000-0000-0000-0000-00000000C007}": "tests.runtime.minimodel.location:Location",
+    "{00000000-0000-0000-0000-00000000C008}": "tests.runtime.minimodel.conductor:Conductor",
 }

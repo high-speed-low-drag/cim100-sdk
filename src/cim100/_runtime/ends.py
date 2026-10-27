@@ -73,7 +73,13 @@ class _End(Generic[T]):
         """The target class, imported on first use."""
         cls = self._cls
         if cls is None:
-            cls = self._cls = resolve(self.meta.target)
+            ref = self.meta.target
+            try:
+                cls = self._cls = resolve(ref)
+            except Exception as e:
+                raise RuntimeError(
+                    f"{self.owner.__name__}.{self.name}: cannot resolve target {ref!r}"
+                ) from e
         return cls
 
     @property
@@ -244,9 +250,15 @@ class Many(_End[T]):
         return obj
 
     def extend(self, obj: O, others: Iterable[T] | None) -> O:
-        """Add every item of `others` (None adds nothing). Used by generated ``__init__``."""
+        """Add every item of `others` (None adds nothing). Used by generated ``__init__``.
+
+        All items are type-checked before any is linked, so a TypeError leaves no links.
+        """
         if others is not None:
-            for other in others:
+            items = list(others)
+            for other in items:  # validate everything first: a bad item links nothing
+                self._check(other)
+            for other in items:
                 self.add(obj, other)
         return obj
 
