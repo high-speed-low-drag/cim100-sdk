@@ -676,6 +676,7 @@ def read_jsonld(path_or_file: PathOrFile, *, strict: bool = False) -> CimDocumen
     The dataset description (top-level keys next to ``@graph``) is returned as ``header``.
     """
     try:
+        data: bytes | str
         if isinstance(path_or_file, str | os.PathLike):
             with open(path_or_file, "rb") as f:
                 data = f.read()

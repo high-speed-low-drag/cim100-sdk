@@ -61,10 +61,10 @@ print(Substation(name="S").validate())
 `copy.deepcopy` and `pickle` give a separate, consistent graph (cycles are fine).
 `copy.copy` raises `TypeError`, because a shallow copy would share half-links with the original.
 
-## Serialization (CIMXML)
+## Serialization (CIMXML and JSON-LD)
 
-`cim100.serialization` writes and reads IEC 61970-552 RDF/XML (stdlib only), generically for every
-class, driven by `_cim_meta`.
+`cim100.serialization` writes and reads IEC 61970-552 RDF/XML (CIMXML) and CIM JSON-LD (stdlib
+only), generically for every class, driven by `_cim_meta`.
 
 ```python
 from cim100 import ACLineSegment, Terminal, Substation, PhaseCode
@@ -96,6 +96,49 @@ assert line2.equipment_container is doc.by_id["sub-1"]
 - Output is deterministic (sorted by CIM class name, then id) and pretty-printed UTF-8.
 - The full rules (ids, naming, value encoding, duplicate CIM class names) are in the docstring of
   `cim100/serialization/_common.py`.
+
+### CIM JSON-LD
+
+`write_jsonld`, `to_jsonld_string`, `to_jsonld_dict` and `read_jsonld` take the same arguments
+(plus `indent=`) and return the same `CimDocument`; the format follows the DIGIN10 "CIMJSON-LD"
+convention. Reading CIMXML and JSON-LD of the same objects gives equal graphs.
+
+```python
+from cim100.serialization import read_jsonld, to_jsonld_string, write_jsonld
+
+print(to_jsonld_string([sub]))
+# {
+#   "@context": {"cim": "http://iec.ch/TC57/CIM100#", "rdf": "...", "md": "...", "xsd": "..."},
+#   "@graph": [
+#     {"@id": "#_line-1", "@type": "cim:ACLineSegment",
+#      "cim:Conductor.length": 12.5,
+#      "cim:IdentifiedObject.mRID": "line-1", "cim:IdentifiedObject.name": "L1",
+#      "cim:Equipment.EquipmentContainer": {"@id": "#_sub-1"}},
+#     {"@id": "#_t-1", "@type": "cim:Terminal", "cim:Terminal.phases": {"@id": "cim:PhaseCode.ABC"},
+#      "cim:Terminal.ConductingEquipment": {"@id": "#_line-1"}, ...},
+#     ...
+#   ]
+# }
+write_jsonld([sub], "network.jsonld", header={"description": "demo", "version": "1"})
+doc = read_jsonld("network.jsonld")
+assert doc.by_id["line-1"].terminals[0].phases is PhaseCode.ABC
+```
+
+- `@id` is `urn:uuid:<mrid>` for UUID mRIDs, `#_<percent-encoded mrid>` for any other mRID and the
+  blank node `_:gen<N>` for objects without one. Enums are `{"@id": "cim:Enum.literal"}`,
+  compounds nested objects without `@id`, many-ends arrays of `{"@id": ...}`, `Decimal` a string,
+  datetimes typed `xsd` literals, and NaN/INF `{"@value": "NaN", "@type": "xsd:double"}`.
+- A header becomes the DIGIN dataset description (`dcat:Dataset`, `prov:generatedAtTime`,
+  `dcterms:description`, ...) next to `@graph`.
+- The reader takes `@graph` or a top-level array, `urn:uuid:x`, `_x`, `#_x` and compact IRIs as ids,
+  and properties without `cim:` when the context has an `@vocab`.
+- The module docstring of `cim100/serialization/jsonld.py` lists which conventions are from the
+  spec and which are inferred.
+- In CIMXML, strings with XML-invalid control characters raise `ValueError` when written (JSON-LD
+  can carry them); an mRID that is not a valid XML name (for example `a#b`) is written
+  `rdf:about="#_a%23b"`.
+- A writer emits one `warnings.warn` per association end that has no CIM role in the model (it is
+  then written under its generated Python name, which is not standard CIM).
 
 ## Naming
 

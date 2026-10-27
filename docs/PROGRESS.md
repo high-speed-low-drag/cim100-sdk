@@ -92,7 +92,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - repo: new cim100-networks repo vs SDK examples/?
 
 | S1 | CIMXML | done (reviewed PASS WITH NITS) | 2f3e057 |
-| S2 | JSON-LD | todo | |
+| S2 | JSON-LD | done | see git log |
 | S3 | Network builder | todo | |
 | S4 | Export + round-trip | todo | |
 - S1 (2f3e057) review by sonnet: PASS WITH NITS.
@@ -104,3 +104,5 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
     - `_normalize_id` splits mrids that contain `#`
     - the docstring count is wrong
     - the warning text duplicates the class name
+
+- S2 (sonnet): `cim100.serialization.jsonld` (`write_jsonld`, `to_jsonld_string`, `to_jsonld_dict`, `read_jsonld`, `CimJsonLdError`), following the DIGIN10 CIMJSON-LD convention (3lbits/CIM4NoUtility `Telemark-120/docs/CIMJSON-LD.adoc`; the Grunnprofil path in the brief has moved). `CimDocument` and the reader scaffolding moved to `_common`; test network moved to `tests/serialization/network.py`. S1 nits fixed: XML-invalid control characters raise ValueError, `\r` is written `&#13;`, `normalize_id` strips only a leading `#`/`urn:uuid:`/IRI base and non-NCName mrids use `rdf:about="#_<pct>"`, docstring counts, one roleless-end warning per end per call, warning text `Terminal: ACDCTerminal.sequenceNumber`.
