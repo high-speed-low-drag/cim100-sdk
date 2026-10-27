@@ -78,7 +78,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - `Mass.unit` 'g' is a known model quirk (UnitSymbol has no `g`). The test should allow it as a documented exception.
 - M6a done (opus): fixed at the source the 8 findings of attempt 1. `normalize._parse_default` now emits `_dt.date(y, m, d)` for Date defaults (generator imports `datetime as _dt` at runtime for those modules); `AttrMeta.py_type` holds the CIM type name for non-primitive types (e.g. `TroubleSymptomsTree Kind`); `Mass.unit` 'g' stays None and is allowed through `KNOWN_MODEL_QUIRKS` in the tests. New `tests/sdk/test_integrity.py` (end integrity, exact Many methods, deprecated flags 16/1/0, API surface) and `tests/sdk/test_behaviour.py` (link/unlink of all 1,374 associations from both sides, self-associations, by_mrid). mypy and README still to do for M6.
 
-## Next phase (2026-10-27): MV-LV networks + serialization (awaiting Michael's answers)
+## Phase 2 (2026-10-27): serialization and MV-LV networks. Decisions approved; see PLAN.md Phase 2
 - Source data: ~/claude_code/MV-LV-Networks, a clone of Team-Nando/MV-LV-Networks (BSD-3-Clause). 4 AusNet 22 kV feeders; the rural ones include SWER at 12.7 kV.
 - Michael wants the LV network left out. Everything after the distribution transformer secondary becomes an EquivalentInjection.
 - Proposed milestones:
@@ -90,3 +90,8 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - EquivalentInjection p/q: empty?
   - explicit phases for SWER?
   - repo: new cim100-networks repo vs SDK examples/?
+
+| S1 | CIMXML | in-progress | |
+| S2 | JSON-LD | todo | |
+| S3 | Network builder | todo | |
+| S4 | Export + round-trip | todo | |

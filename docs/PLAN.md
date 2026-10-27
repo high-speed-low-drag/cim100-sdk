@@ -89,3 +89,21 @@ Counts are pinned in `tests/test_ea_reader.py` and printed by `tools/dump_ir.py`
 - **Cardinalities used:** `1`, `0..1`, `0..*`, `1..*`, `2..*`, `0..2`, `0..n`, `1..`. A bare `*` never occurs but is accepted. Attribute bounds are only 0..1 (6,286) or 1..1 (48).
 - **Notes:** EA uses an HTML subset (`i b u sub sup font ul ol li img a`) plus entities (`&lt;&lt;Compound&gt;&gt;`). Notes also contain literal pseudo-tags such as `<was Switch data.>` and `<type>.<domain>`, so only known tags are stripped.
 - **Versions:** IEC61970CIM17v40, IEC61968CIM13v13b, IEC62325CIM03v17b, PackageDependenciesCIMVersion=10.
+
+# Phase 2: serialization and the MV-LV networks (2026-10-27)
+
+## Decisions
+Michael approved the recommendations and asked for JSON as an extra step.
+- **Formats:** CIMXML (IEC 61970-552 RDF/XML) and CIM JSON-LD, following the UCAIug spec in cimug-org/CIM_JSON-LD_Syntax. Both are generic, driven by `_cim_meta`, and have a writer and a reader.
+- **LV networks:** not modelled. Each distribution transformer secondary gets one LV ConnectivityNode with one EquivalentInjection, whose p/q are left empty (a static model). The transformer type (RES/COM) and its customer and PV counts go in name/description.
+- **Phases:** SWER and two-phase lines and transformers are modelled with explicit phases (ACLineSegmentPhase, PhaseCode on Terminal and PowerTransformerEnd).
+- **Network code:** goes in a new local repo `~/claude_code/cim100-networks`, which depends on the SDK through a uv path dependency. Source data comes from `~/claude_code/MV-LV-Networks` (BSD-3-Clause) and is not copied into our repos.
+- **SDK branch:** `feat/serialization`, branched from `feat/cim100-sdk`.
+
+## Milestones
+| # | Work | Repo | Model |
+|---|---|---|---|
+| S1 | Generic CIMXML writer and reader `cim100.serialization.cimxml`, plus a shared format-neutral layer (object collection, property naming, value encoding), with round-trip tests | sdk | sonnet |
+| S2 | CIM JSON-LD writer and reader `cim100.serialization.jsonld`, reusing that layer, with round-trip tests and CIMXML↔JSON-LD equivalence | sdk | sonnet |
+| S3 | Excel→CIM builder for the 4 networks, with count tests against the sheets | networks | opus |
+| S4 | Export the 4 networks to .xml and .jsonld, round-trip them, and write a summary report | networks | sonnet |
