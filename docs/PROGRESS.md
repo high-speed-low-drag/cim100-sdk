@@ -91,7 +91,16 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - explicit phases for SWER?
   - repo: new cim100-networks repo vs SDK examples/?
 
-| S1 | CIMXML | done | Writer/reader + `serialization/_common.py` (shared with S2); 56k objects: write 3.2 s, read 1.5 s |
+| S1 | CIMXML | done (reviewed PASS WITH NITS) | 2f3e057 |
 | S2 | JSON-LD | todo | |
 | S3 | Network builder | todo | |
 | S4 | Export + round-trip | todo | |
+- S1 (2f3e057) review by sonnet: PASS WITH NITS.
+  - Conformance matches CGMES conventions; round-trip fidelity is good; performance is linear.
+  - The "200 roleless ends" figure was double-counting inherited ends. The real numbers are 66 declared ends, of which 33 are written under snake_case names (none of them in distribution classes).
+  - Nits, to be folded into S2:
+    - control characters produce invalid XML
+    - `\r` is lost
+    - `_normalize_id` splits mrids that contain `#`
+    - the docstring count is wrong
+    - the warning text duplicates the class name
