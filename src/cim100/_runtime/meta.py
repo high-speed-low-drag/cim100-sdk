@@ -46,7 +46,17 @@ _set = object.__setattr__
 class AttrMeta(_Frozen):
     """One UML attribute. Attributes typed by a CIMDatatype hold the plain value."""
 
-    __slots__ = ("name", "cim_name", "py_type", "lower", "upper", "kind", "default", "static", "deprecated")  # noqa: RUF023
+    __slots__ = (
+        "name",
+        "cim_name",
+        "py_type",
+        "lower",
+        "upper",
+        "kind",
+        "default",
+        "static",
+        "deprecated",
+    )  # noqa: RUF023
 
     name: str  # Python attribute name
     cim_name: str
@@ -84,7 +94,17 @@ class AttrMeta(_Frozen):
 class EndMeta(_Frozen):
     """One association end owned by a class."""
 
-    __slots__ = ("name", "cim_role", "target", "many", "lower", "upper", "inverse", "aggregation", "deprecated")  # noqa: RUF023
+    __slots__ = (
+        "name",
+        "cim_role",
+        "target",
+        "many",
+        "lower",
+        "upper",
+        "inverse",
+        "aggregation",
+        "deprecated",
+    )  # noqa: RUF023
 
     name: str  # Python attribute name of the end
     cim_role: str | None

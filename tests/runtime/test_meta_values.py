@@ -87,7 +87,9 @@ def test_metas_are_frozen_values():
     with pytest.raises(AttributeError):
         del a.lower
     assert "cim_name='X'" in repr(a)
-    assert ClassMeta("C", "p", "g", ends=[EndMeta("e", None, "m:C", True, 0, None, "f")]).ends[0].name
+    assert (
+        ClassMeta("C", "p", "g", ends=[EndMeta("e", None, "m:C", True, 0, None, "f")]).ends[0].name
+    )
 
 
 def test_registry_resolves_to_classes_with_matching_guid():
@@ -183,7 +185,9 @@ def test_attribute_named_like_an_import_resolves_in_class_namespace():
     ns = {**vars(asset_module), "_dt": _dt}  # module globals as a type checker sees them
     ann = Asset.__annotations__["date"]
     assert eval(ann, ns, dict(vars(Asset))) == _dt.date | None
-    assert eval("date", ns, dict(vars(Asset))) is Asset.__dict__["date"]  # what a bare name would hit
+    assert (
+        eval("date", ns, dict(vars(Asset))) is Asset.__dict__["date"]
+    )  # what a bare name would hit
     a = Asset(date=_dt.date(2026, 1, 2))
     assert a.date == _dt.date(2026, 1, 2)
 
@@ -218,7 +222,9 @@ def test_validate_never_raises():
 
     class Broken(CimObject):
         __slots__ = ()
-        _cim_meta = ClassMeta("Broken", "p", "g", ends=(EndMeta("ghost", None, "m:C", True, 1, None, "x"),))
+        _cim_meta = ClassMeta(
+            "Broken", "p", "g", ends=(EndMeta("ghost", None, "m:C", True, 1, None, "x"),)
+        )
 
     issues = Broken().validate()
     assert len(issues) == 1 and "validate() failed" in issues[0]

@@ -140,7 +140,9 @@ class _Bad(CimObject):
 
 
 def test_unresolvable_target_message_and_chain():
-    with pytest.raises(RuntimeError, match=r"_Bad\.x: cannot resolve target 'no\.such\.module:Foo'") as ei:
+    with pytest.raises(
+        RuntimeError, match=r"_Bad\.x: cannot resolve target 'no\.such\.module:Foo'"
+    ) as ei:
         _Bad().x = object()
     assert isinstance(ei.value.__cause__, ImportError)
     with pytest.raises(RuntimeError, match=r"_Bad\.y: cannot resolve target .*Nope") as ei:

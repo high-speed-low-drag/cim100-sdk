@@ -62,7 +62,9 @@ def test_many_ends_expose_exactly_their_methods(resolved, by_guid):
             if callable(v) and not n.startswith("_") and not isinstance(v, (One, Many, type))
         }
         if own != expected:
-            f.append(f"{rc.cim_name}: public methods differ, extra={sorted(own - expected)[:3]} missing={sorted(expected - own)[:3]}")
+            f.append(
+                f"{rc.cim_name}: public methods differ, extra={sorted(own - expected)[:3]} missing={sorted(expected - own)[:3]}"
+            )
     check(f)
 
 
@@ -93,7 +95,9 @@ def test_deprecated_flags(ir, resolved, by_guid):
 
 def test_canonical_names_import_from_top_level(resolved, by_guid):
     f = []
-    canonical = [o for o in (*resolved.classes, *resolved.enums) if o.is_canonical and o.kind != "primitive"]
+    canonical = [
+        o for o in (*resolved.classes, *resolved.enums) if o.is_canonical and o.kind != "primitive"
+    ]
     assert len(canonical) == len(_registry.BY_NAME)
     for o in canonical:
         try:
@@ -110,10 +114,16 @@ def test_canonical_names_import_from_top_level(resolved, by_guid):
 
 def test_non_canonical_duplicates_import_by_module(resolved, by_guid):
     f = []
-    dups = [o for o in (*resolved.classes, *resolved.enums) if not o.is_canonical and o.kind != "primitive"]
+    dups = [
+        o
+        for o in (*resolved.classes, *resolved.enums)
+        if not o.is_canonical and o.kind != "primitive"
+    ]
     assert dups, "the model has duplicate class names"
     canonical_refs = set(_registry.BY_NAME.values())
-    assert {o.guid for o in dups} == {g for g, r in _registry.BY_GUID.items() if r not in canonical_refs}
+    assert {o.guid for o in dups} == {
+        g for g, r in _registry.BY_GUID.items() if r not in canonical_refs
+    }
     for o in dups:
         mod = importlib.import_module(o.module)
         cls = getattr(mod, o.py_name, None)

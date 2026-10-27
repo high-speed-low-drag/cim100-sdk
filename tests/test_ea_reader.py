@@ -108,7 +108,7 @@ def test_parse_cardinality_rejects_unknown(text):
 
 
 def test_clean_notes_strips_rich_text_only():
-    raw = '<b>Bold</b> &lt;&lt;enum&gt;&gt;\r\n<ul>\r\n\t<li>one</li>\r\n</ul>\r\n<was old.>'
+    raw = "<b>Bold</b> &lt;&lt;enum&gt;&gt;\r\n<ul>\r\n\t<li>one</li>\r\n</ul>\r\n<was old.>"
     assert clean_notes(raw) == "Bold <<enum>>\n\n- one\n\n<was old.>"
     assert clean_notes(None) == ""
 
