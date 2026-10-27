@@ -92,8 +92,8 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - repo: new cim100-networks repo vs SDK examples/?
 
 | S1 | CIMXML | done (reviewed PASS WITH NITS) | 2f3e057 |
-| S2 | JSON-LD | done | see git log |
-| S3 | Network builder | todo | |
+| S2 | JSON-LD | done (verified by orchestrator: CIMXML↔JSON-LD equivalence + pyld expand; no separate review) | 65c77aa |
+| S3 | Network builder (~/claude_code/cim100-networks) | in-progress | |
 | S4 | Export + round-trip | todo | |
 - S1 (2f3e057) review by sonnet: PASS WITH NITS.
   - Conformance matches CGMES conventions; round-trip fidelity is good; performance is linear.
