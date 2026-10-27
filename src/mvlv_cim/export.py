@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 import warnings
 from collections.abc import Iterable
@@ -14,7 +15,8 @@ from cim100.serialization import write_cimxml, write_jsonld
 
 from mvlv_cim.builder import BuiltNetwork, build_network
 
-DEFAULT_SOURCE = Path("/home/michael/claude_code/MV-LV-Networks")
+#: Team-Nando/MV-LV-Networks checkout: $MVLV_DATA, else ./MV-LV-Networks (relative to cwd).
+DEFAULT_SOURCE = Path(os.environ.get("MVLV_DATA", "MV-LV-Networks"))
 SOURCE_URL = "https://github.com/Team-Nando/MV-LV-Networks"
 LICENCE = "BSD-3-Clause"
 AUTHORITY_SET = "urn:x-mvlv-cim:authority:ausnet-mv-lv-networks"

@@ -16,7 +16,7 @@ object graph. `mvlv-cim` exports it as CIMXML and JSON-LD and checks the round t
 The data comes from [Team-Nando/MV-LV-Networks](https://github.com/Team-Nando/MV-LV-Networks)
 (commit `8429f8a`, BSD-3-Clause, © 2024 Team Nando). The networks are operated by AusNet Services.
 The workbooks are **not** copied into this repository. Point `MVLV_DATA` at a checkout of that
-repository; by default it is the sibling folder `../MV-LV-Networks`. The workbooks are read as
+repository; by default it is `./MV-LV-Networks` (run `git clone https://github.com/Team-Nando/MV-LV-Networks` in this folder; it is gitignored). The workbooks are read as
 untrusted data with openpyxl (values only, nothing executed). Their `backend.py` (OpenDSS) is the
 reference for what each column means. The LV sheets (`lv_lines`, `lv_loads`) are not read.
 
@@ -31,7 +31,7 @@ uv run ruff check .
 ```python
 from mvlv_cim.builder import build_network
 
-net = build_network("../MV-LV-Networks/Network_1_Rural_SMR8.xlsx")
+net = build_network("MV-LV-Networks/Network_1_Rural_SMR8.xlsx")
 net.objects  # every CIM object (IdentifiedObjects plus Name and PositionPoint)
 net.feeder  # the Feeder; net.zone_substation, net.source (ExternalNetworkInjection)
 net.counts  # Counter of objects per class
@@ -46,7 +46,7 @@ Modules: `excel.py` (typed row loading), `builder.py`, `phases.py`, `ids.py` (mR
 
 ```
 uv run mvlv-cim export [--network N ...|--all] [--format cimxml|jsonld|both] [--out out/] \
-                       [--source ../MV-LV-Networks] [--created 2024-01-01T00:00:00Z]
+                       [--source MV-LV-Networks] [--created 2024-01-01T00:00:00Z]
 uv run mvlv-cim verify [--all]    # build, write, read back, compare; 0 warnings / dangling expected
 uv run mvlv-cim summary           # object counts per class and network
 ```
@@ -55,7 +55,7 @@ uv run mvlv-cim summary           # object counts per class and network
 object (including the shared BaseVoltages and region). Each has a header (`md:FullModel` or the
 JSON-LD dataset description) with `created` (source file mtime unless `--created`), description,
 modelingAuthoritySet, the source repo URL and the BSD-3-Clause licence. Output is deterministic.
-`out/` is gitignored. Default source: `/home/michael/claude_code/MV-LV-Networks`.
+`out/` is gitignored. Default source: `$MVLV_DATA`, else `./MV-LV-Networks`.
 
 `verify` compares `canonical_dump` of the built graph with the CIMXML-read and JSON-LD-read graphs,
 the two read graphs with each other, and two exports byte for byte. All four networks pass; sizes,

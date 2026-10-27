@@ -10,7 +10,7 @@ import pytest
 
 from mvlv_cim.builder import BuiltNetwork, build_network
 
-DATA_DIR = Path(os.environ.get("MVLV_DATA", Path(__file__).resolve().parents[2] / "MV-LV-Networks"))
+DATA_DIR = Path(os.environ.get("MVLV_DATA", Path(__file__).resolve().parents[1] / "MV-LV-Networks"))
 NETWORKS = (
     "Network_1_Rural_SMR8",
     "Network_2_Rural_KLO14",
