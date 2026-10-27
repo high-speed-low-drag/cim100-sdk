@@ -6,7 +6,7 @@ from pathlib import Path
 
 import openpyxl
 import pytest
-from cim100 import ACLineSegment, EquivalentInjection, PhaseCode
+from cim100 import ACLineSegment, EquivalentInjection, PhaseCode, RatioTapChanger
 
 from mvlv_cim.builder import build_network
 from mvlv_cim.phases import conn_type_phases, lv_secondary_code, node_spec_phases, phase_letters
@@ -92,7 +92,8 @@ def quirky(tmp_path: Path) -> Path:
                     "Xcor2",
                     "Ycor2",
                     "PhaseNum",
-                ]
+                ],
+                [5, 2, 3, 0, "km", "InLineTransformer-REG", "REG_X", 0, 0, 0, 0, 3],
             ],
             "lines": [
                 LINE_COLS,
@@ -159,6 +160,29 @@ def quirky(tmp_path: Path) -> Path:
                     1,
                 ],
             ],
+            "mvtx": [
+                TX_COLS,
+                [
+                    5,
+                    "REG_X",
+                    2,
+                    3,
+                    "wye",
+                    "wye",
+                    22,
+                    22,
+                    1000,
+                    1000,
+                    0.1,
+                    0.1,
+                    0.1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    "RWB",
+                ],
+            ],
             "mv_net_txs": [
                 TX_COLS,
                 [
@@ -202,6 +226,7 @@ def test_quirky_workbook_builds_and_reports(quirky: Path) -> None:
         "bad_conn_type",
         "bad_value",
         "pvs_null",
+        "regulator_no_tap_range",
     ):
         assert codes[code] >= 1, (code, codes)
     assert b.element_counts["line"] == 5
@@ -214,6 +239,11 @@ def test_quirky_workbook_builds_and_reports(quirky: Path) -> None:
     assert len({o.mrid for o in b.objects if hasattr(o, "mrid")}) == sum(
         1 for o in b.objects if hasattr(o, "mrid")
     )
+    assert b.element_counts["regulator"] == 1
+    # The regulator has no range: no invented tap changer.  SUB_A's fixed 1.05 tap is exact.
+    tcs = [o for o in b.objects if isinstance(o, RatioTapChanger)]
+    assert [tc.transformer_end.power_transformer.name for tc in tcs] == ["SUB_A"]
+    assert (tcs[0].low_step, tcs[0].neutral_step, tcs[0].high_step) == (0, 0, 1)
     assert b.islands and sorted(b.islands[0]) == [7, 8]
     assert b.validate() == []
 

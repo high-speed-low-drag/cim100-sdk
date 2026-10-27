@@ -16,6 +16,7 @@ from cim100 import (
     IdentifiedObject,
     LinearShuntCompensator,
     PowerTransformer,
+    RatioTapChanger,
     Substation,
     Terminal,
     VoltageLevel,
@@ -291,3 +292,72 @@ def test_build_time_and_memory(built: BuiltNetwork) -> None:
     REPORT.setdefault(built.name, {})["peak_mib"] = peak / 2**20
     assert REPORT[built.name]["build_s"] < 60
     assert traced_s < 180
+
+
+def sheet_taps(name: str) -> list[dict]:
+    """Transformer rows (lvtx, mvtx) straight from the workbook, with their regulator flag."""
+    wb = openpyxl.load_workbook(network_path(name), read_only=True, data_only=True)
+    try:
+        out = []
+        conn_type = {}
+        it = wb["connections"].iter_rows(values_only=True)
+        header = next(it)
+        for r in it:
+            d = dict(zip(header, r, strict=False))
+            conn_type[d["Element_ID"]] = d["Type"]
+        for sheet in ("lvtx", "mvtx"):
+            if sheet not in wb.sheetnames:
+                continue
+            it = wb[sheet].iter_rows(values_only=True)
+            header = next(it)
+            for r in it:
+                d = dict(zip(header, r, strict=False))
+                if not any(v is not None for v in r):
+                    continue
+                d["_reg"] = sheet == "mvtx" and conn_type[d["Element_ID"]].endswith("-REG")
+                out.append(d)
+        return out
+    finally:
+        wb.close()
+
+
+def test_tap_changers_are_faithful(built: BuiltNetwork) -> None:
+    rows = sheet_taps(built.name)
+    fixed_rows = [
+        r
+        for r in rows
+        if not r["_reg"] and (r["wdg1_numtaps"] or 1) <= 1 and abs((r["wdg1_tap"] or 1) - 1) > 1e-9
+    ]
+    reg_rows = [r for r in rows if r["_reg"] and (r["wdg1_numtaps"] or 1) > 1]
+    tcs = of_type(built, RatioTapChanger)
+    fixed, ranged = [], []
+    for tc in tcs:
+        (fixed if tc.ltc_flag is False else ranged).append(tc)
+    # Counts: one tap changer per fixed-tap transformer and per regulator with a range.
+    assert len(fixed) == len(fixed_rows)
+    assert len(ranged) == len(reg_rows)
+    assert len(tcs) == len({tc.mrid for tc in tcs})
+    REPORT.setdefault(built.name, {})["tap_changers"] = f"{len(fixed)} fixed + {len(ranged)} reg"
+    # No invented ranges.
+    for tc in fixed:
+        assert (tc.low_step, tc.neutral_step, tc.high_step) == (0, 0, 1)
+        assert (tc.normal_step, tc.step) == (1, 1)
+        assert tc.description == "fixed off-load tap from sheet (no range given)"
+        assert tc.low_step <= tc.neutral_step <= tc.high_step
+    # Every fixed tap reproduces rated_u x sheet tap at the current step.
+    got = Counter()
+    for tc in fixed:
+        end = tc.transformer_end
+        u = end.rated_u * (1 + tc.step_voltage_increment / 100 * (tc.step - tc.neutral_step))
+        assert tc.neutral_u == end.rated_u
+        got[(end.power_transformer.name, round(u, 6))] += 1
+    want = Counter()
+    for r in fixed_rows:
+        want[(r["Substation_ID"], round(r["kvs_primary"] * 1000 * r["wdg1_tap"], 6))] += 1
+    assert got == want
+    # Regulators keep the sheet's range: low <= neutral <= high and the step reproduces the tap.
+    for tc in ranged:
+        assert tc.low_step <= tc.neutral_step <= tc.high_step
+        assert tc.high_step - tc.low_step + 1 == 17
+        assert tc.ltc_flag is True
+    assert not [i for i in built.issues if i.code == "regulator_no_tap_range"]

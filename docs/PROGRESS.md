@@ -33,10 +33,13 @@
   KLO14's `PLENTY_VLY_RISE` (22/22 kV, 1 tap) is an in-line transformer with no tap changer.
 - **Single-phase transformers** have 2 ends and `connection_kind = I`.
   - Isolating transformers: secondary `A`, the SWER conductor (node 1).
-  - 2-colour lvtx: secondary `s12N`, rated per the sheet (433 V), not backend's 0.25+0.25 kV centre tap.
+  - 2-colour lvtx: secondary `s12N`, rated per the sheet (433 V), not backend's 0.25+0.25 kV centre tap.  Issue `backend_centre_tap_differs`, once per network.
 - **Regulators:** Yn/Yn (backend.py uses grounded-wye autotransformers) rather than the sheet's
   delta/wye. The tap range comes from the sheet's 17 taps, 0.7478–1.0582.
-- **Off-load taps:** lvtx gives only a tap value, so the range is assumed to be ±2 × 2.5 %.
+- **Off-load taps:** lvtx gives only a tap value and no range, so none is invented: one
+  `RatioTapChanger` with low 0 / neutral 0 / high 1 / step 1 and increment (tap−1)×100 %.
+  Regulators without a range get no tap changer (`regulator_no_tap_range`). Review notes are in
+  README.md.
 - **Vector group:** D/Yn uses `phase_angle_clock = 1` (OpenDSS ANSI lag).
 - **BaseVoltage snapping:** a rating within 5 % snaps to a standard BaseVoltage, so the zone
   secondaries of 22.9 and 22.7 kV map to 22 kV.

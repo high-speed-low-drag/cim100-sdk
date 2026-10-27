@@ -98,9 +98,7 @@ networks. A rating within 5 % of one of these maps to it (for example the zone s
 `wdg1_tap`. Regulators get `ltc_flag = control_enabled = True`; backend.py's RegControl settings
 (vreg 100, band 3, ptratio 127) are in the description. No `TapChangerControl` is modelled.
 Distribution transformers give only a fixed off-load tap (1.05, 1.025, 0.975, 0.95) with
-`numtaps = 1`. For these we assume ±2 × 2.5 % and set the step to match the tap. backend.py
-overrides the range with `numtaps=4 maxtap=1.137 mintap=1.028`; that range excludes taps below
-1.028, so we don't use it.
+`numtaps = 1`. The sheet gives no range, so none is invented (see "Review notes" below).
 
 **Source.** The `ExternalNetworkInjection` uses backend.py's `vsource` (66 kV, R1 = 0.52824,
 X1 = 2.113, R0 = 0.59157, X0 = 1.7 Ω). It is stored as `max_initial_sym_sh_c_current` (17.5 kA),
@@ -155,3 +153,27 @@ injection uses the LV BaseVoltage, its terminal phases match the secondary,
 
 No islands: every node is reachable from the source in all four networks. The builder would
 report islands as `island` issues and assign them a voltage from their equipment.
+
+## Review notes (S3)
+
+Each note gives the source and the choice made.
+
+- **Fixed off-load taps (tap encoding).** Source: lvtx/mvtx `wdg1_tap` ≠ 1 with
+  `wdg1_numtaps` ≤ 1 and no range (backend.py's `numtaps=4 maxtap=1.137 mintap=1.028` override is
+  not in the sheet and is not used). Choice: never invent data, so one `RatioTapChanger` with
+  `low_step = neutral_step = 0`, `high_step = normal_step = step = 1`,
+  `step_voltage_increment = (tap − 1) × 100` (5.0 for 1.05, −2.5 for 0.975), `neutral_u` = the end's
+  `rated_u`, `ltc_flag = False`, description "fixed off-load tap from sheet (no range given)". This
+  keeps low ≤ neutral ≤ high (CGMES) and gives exactly `rated_u × tap` at the current step. A tap of
+  exactly 1 with no range gets no tap changer.
+- **Regulators without a range.** None in the data. If one appears, no `RatioTapChanger` is
+  emitted (no ±10 % fallback) and the issue `regulator_no_tap_range` is recorded.
+- **2-colour secondaries.** Source: the sheet's 0.433 kV secondary. Choice: we model `s12N` at
+  433 V. backend.py builds a 0.25+0.25 kV centre tap with the kVA on each leg; the difference is
+  recorded once per network, with a count, as the issue `backend_centre_tap_differs`.
+- **1-phase lines.** Source: linecodes `r1, x1, r0, x0`. Choice: CIM carries the sequence values
+  (`r, x, r0, x0`) unchanged. OpenDSS uses Zs = (2·z1 + z0) / 3 for a 1-phase line, so the CIM
+  consumer must derive it.
+- **Regulator impedance base.** Source: the sheet's kVA rating and `xhl`/`%loadloss`. Choice: we use
+  the sheet's rating as the impedance base. backend.py builds per-phase autotransformers, so its
+  effective base differs.

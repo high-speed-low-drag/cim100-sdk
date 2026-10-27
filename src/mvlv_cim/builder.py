@@ -79,13 +79,15 @@ SOURCE_BUS = "SourceBus"
 SOURCE_Z = {"r1": 0.52824, "x1": 2.113, "r0": 0.59157, "x0": 1.7}
 #: Length unit (OpenDSS ``units=``) to metres.
 METRES_PER_UNIT = {"km": 1000.0, "m": 1.0, "mi": 1609.344, "kft": 304.8, "ft": 0.3048}
-#: Off-load tap step assumed for distribution transformers whose sheet gives a tap but no range.
-OFFLOAD_TAP_STEP = 0.025
 
 #: Findings reported once per network with the list of affected rows.
 GROUPED = {
     "pvs_null": "PVs is 'Null'; reported as pvs=unknown",
     "shared_mv_bus": "several distribution transformers on one MV bus (Substation_ID@bus)",
+    "backend_centre_tap_differs": (
+        "2-colour secondary modelled as s12N at the sheet's 433 V; backend.py builds a "
+        "0.25+0.25 kV centre tap with the kVA on each leg"
+    ),
     "single_phase_to_earth_rating": (
         "1-colour (phase-to-earth) unit rated 22 kV on the 22 kV network, where it sees 12.7 kV; "
         "rating kept as in the sheet and backend.py"
@@ -191,6 +193,7 @@ class _TapSpec:
     tap: float
     ltc: bool
     description: str | None = None
+    fixed: bool = False
 
 
 class _Builder:
@@ -977,33 +980,23 @@ class _Builder:
         if n > 1 and mx > mn:
             return _TapSpec(n, mx, mn, tap, ltc=regulator)
         if regulator:
-            # backend.py: +/-10 % autotransformer regulation; 33 positions of 0.625 %.
             self.issue(
                 "regulator_no_tap_range",
-                "no tap range in the sheet; +/-10 % in 32 steps assumed",
+                "no tap range in the sheet; no RatioTapChanger emitted",
                 t.sheet,
                 t.substation_id,
             )
-            return _TapSpec(33, 1.1, 0.9, tap, ltc=True)
+            return None
         if abs(tap - 1.0) > 1e-9:
-            # A fixed off-load tap with no range in the sheet: assume 2.5 % steps around it.
-            steps = round((tap - 1.0) / OFFLOAD_TAP_STEP)
-            inc = (
-                OFFLOAD_TAP_STEP
-                if abs(steps * OFFLOAD_TAP_STEP - (tap - 1.0)) < 1e-9
-                else abs(tap - 1.0)
-            )
-            k = max(2, abs(round((tap - 1.0) / inc)))
+            # A fixed off-load tap with no range in the sheet: encode it without inventing a range.
             return _TapSpec(
-                2 * k + 1,
-                1 + k * inc,
-                1 - k * inc,
+                n,
+                mx,
+                mn,
                 tap,
                 ltc=False,
-                description=(
-                    f"off-load tap; range +/-{k} x {inc * 100:g} % assumed (sheet: "
-                    f"wdg1_numtaps={t.numtaps} wdg1_tap={tap:g})"
-                ),
+                description="fixed off-load tap from sheet (no range given)",
+                fixed=True,
             )
         return None
 
@@ -1103,6 +1096,26 @@ class _Builder:
         t: _TapSpec,
         kv: float | None,
     ) -> None:
+        if t.fixed:
+            # Two positions: neutral (tap 1, step 0) and the sheet's tap (step 1).
+            self.add(
+                RatioTapChanger(
+                    mrid=self.mrid("RatioTapChanger", key),
+                    name=f"{name} tap changer",
+                    description=t.description,
+                    step_voltage_increment=round((t.tap - 1.0) * 100, 9),
+                    low_step=0,
+                    high_step=1,
+                    neutral_step=0,
+                    normal_step=1,
+                    step=1,
+                    neutral_u=None if kv is None else kv * 1000,
+                    ltc_flag=False,
+                    control_enabled=False,
+                    transformer_end=end,
+                )
+            )
+            return
         inc = (t.maxtap - t.mintap) / (t.numtaps - 1)
         high = round((t.maxtap - 1.0) / inc)
         low = high - (t.numtaps - 1)
@@ -1271,6 +1284,8 @@ class _Builder:
                     "lvtx",
                     sid,
                 )
+            if nph == 2:
+                self.group("backend_centre_tap_differs", "lvtx", sid)
             if nph == 1 and kv1 is not None and kv1 != 12.7:
                 self.group("single_phase_to_earth_rating", "lvtx", sid)
             kv2 = self.nominal(t.kv_secondary, "secondary", "lvtx", sid)
