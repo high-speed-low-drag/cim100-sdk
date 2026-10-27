@@ -4,7 +4,7 @@ Written 2026-10-27 from the planning agent's research. Scope: every CIM100 class
 
 ## Source model
 - **Primary:** `https://raw.githubusercontent.com/cimug-org/CIMTool/2a47a3778963da9389c9d50b91e92439470021e4/CSharpEFTestProject/CSharpEFTestProject/Schema/iec61970cim17v40_iec61968cim13v13b_iec62325cim03v17b_CIM100.1.1.1.qea`
-  - 42,663,936 bytes, sha256 `677355eaad0c7a1321788c0301e0e24c66c8567c5560dab8d7788974c98cf710`
+  - 42,672,128 bytes (planner originally wrote 42,663,936; verified by sha256 in M1), sha256 `677355eaad0c7a1321788c0301e0e24c66c8567c5560dab8d7788974c98cf710`
   - The repo is LGPL-2.1, but the UML file states public domain / Apache-2.0.
 - **Mirror** (Apache-2.0 repo; content identical, bytes differ): `https://raw.githubusercontent.com/netbeheernederland/tc57cim/91d32217c396bbaa379bc29a5e8bc3cda6f17f07/src/data/iec61970cim17v40_iec61968cim13v13b_iec62325cim03v17b_CIM100.1.1.1.qea`
   - sha256 `feb5c3c51b8efc2e66bc917b3f5be43bf1d0e6434cb235da5b486869a5944454`
