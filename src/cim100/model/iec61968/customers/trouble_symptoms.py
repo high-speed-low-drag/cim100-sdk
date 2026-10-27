@@ -134,7 +134,7 @@ class TroubleSymptoms(CimObject):
             AttrMeta(
                 "trouble_symptoms_tree",
                 "troubleSymptomsTree",
-                "TroubleSymptomsTree_Kind",
+                "TroubleSymptomsTree Kind",
                 1,
                 1,
                 "enumeration",

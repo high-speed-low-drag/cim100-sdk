@@ -21,6 +21,7 @@ Naming rules (all deterministic):
 
 from __future__ import annotations
 
+import datetime as _dt
 import keyword
 import math
 import re
@@ -393,6 +394,9 @@ def _parse_default(raw: str | None, tkind: str, prim: str | None, enum: REnum | 
                 return None
             if prim == "str":
                 return repr(raw)
+            if prim == "date":
+                d = _dt.date.fromisoformat(raw)
+                return f"_dt.date({d.year}, {d.month}, {d.day})"
         except ValueError:
             return None
     return None

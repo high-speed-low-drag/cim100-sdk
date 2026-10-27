@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from cim100._runtime import AttrMeta, CimObject, ClassMeta
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    import datetime as _dt
     from typing import ClassVar
 
 
@@ -15,7 +16,7 @@ class IEC61970CIMVersion(CimObject):
 
     __slots__ = ()
 
-    date: ClassVar[_dt.date | None] = None
+    date: ClassVar[_dt.date] = _dt.date(2020, 8, 24)
     version: ClassVar[str] = "IEC61970CIM17v40"
 
     _cim_meta = ClassMeta(
@@ -23,7 +24,7 @@ class IEC61970CIMVersion(CimObject):
         package="TC57CIM/IEC61970",
         guid="{990AB50C-5CF8-46d2-B5FF-887BBBD3346F}",
         attributes=(
-            AttrMeta("date", "date", "date", 0, 1, "primitive", static=True),
+            AttrMeta("date", "date", "date", 0, 1, "primitive", _dt.date(2020, 8, 24), static=True),
             AttrMeta(
                 "version", "version", "str", 0, 1, "primitive", "IEC61970CIM17v40", static=True
             ),

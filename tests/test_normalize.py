@@ -217,7 +217,7 @@ def test_defaults_evaluate(rm):
 
     ns = {e.py_name: __import__("enum").Enum(e.py_name, [(l.py_name, l.cim_value) for l in e.literals])
           for e in rm.enums if e.is_canonical}
-    ns.update(Decimal=Decimal, datetime=datetime, date=date, time=time)
+    ns.update(_dt=__import__("datetime"), Decimal=Decimal, datetime=datetime, date=date, time=time)
     n = 0
     for c in rm.classes:
         for a in c.attributes:
@@ -402,3 +402,9 @@ def test_unresolvable_collision_raises(ir):
     m2 = replace(ir, classifiers=tuple(bad if x.guid == c.guid else x for x in ir.classifiers))
     with pytest.raises(NormalizeError):
         normalize(m2)
+
+
+def test_date_default_expression(rm):
+    c = next(c for c in rm.classes if c.cim_name == "IEC61970CIMVersion")
+    d = next(a for a in c.attributes if a.cim_name == "date")
+    assert d.default == "_dt.date(2020, 8, 24)"

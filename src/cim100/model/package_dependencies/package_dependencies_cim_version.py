@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from cim100._runtime import AttrMeta, CimObject, ClassMeta
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    import datetime as _dt
     from typing import ClassVar
 
 
@@ -16,7 +17,7 @@ class PackageDependenciesCIMVersion(CimObject):
 
     __slots__ = ()
 
-    date: ClassVar[_dt.date | None] = None
+    date: ClassVar[_dt.date] = _dt.date(2022, 5, 25)
     version: ClassVar[str] = "10"
 
     _cim_meta = ClassMeta(
@@ -24,7 +25,7 @@ class PackageDependenciesCIMVersion(CimObject):
         package="TC57CIM/PackageDependencies",
         guid="{EEB4990E-A0CF-4f4b-981C-2A2C774153BC}",
         attributes=(
-            AttrMeta("date", "date", "date", 0, 1, "primitive", static=True),
+            AttrMeta("date", "date", "date", 0, 1, "primitive", _dt.date(2022, 5, 25), static=True),
             AttrMeta("version", "version", "str", 0, 1, "primitive", "10", static=True),
         ),
     )

@@ -191,7 +191,7 @@ class Imports:
         blocks.append([line for _, line in sorted(first_party, key=lambda t: t[0].lower())])
 
         tc: list[list[str]] = []
-        std_lines = sorted(STD_IMPORT[s] for s in self.std)
+        std_lines = sorted(STD_IMPORT[s] for s in self.std if STD_IMPORT[s] not in self.rt_std)
         if self.iterable:
             std_lines.append("from collections.abc import Iterable")
         if self.typing_names:
@@ -264,6 +264,9 @@ class Generator:
                 raise GenerateError(f"enum default {d!r} does not start with {obj.py_name}")
             imp.need(obj, runtime=True)
             return imp.name(obj) + d[len(obj.py_name) :]
+        if d.startswith("_dt.date("):
+            imp.rt_std.add("import datetime as _dt")  # the default is evaluated at import time
+            return d
         ast.literal_eval(d)  # must be a plain literal
         return d
 
@@ -271,7 +274,7 @@ class Generator:
         parts = [
             q(a.py_name),
             q(a.cim_name),
-            q(a.py_type),
+            q(a.py_type if a.type_kind == "primitive" else self.by_guid[a.type_guid].cim_name),
             str(a.lower),
             "None" if a.upper is None else str(a.upper),
             q(a.type_kind),
