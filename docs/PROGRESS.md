@@ -33,7 +33,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M1 | Model fetch | done | e7853ca |
 | M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
 | M3 | Normalize | done (reviewed, fixes applied) | 27fcbe3, e5c7a21 |
-| M4 | Runtime | todo | |
+| M4 | Runtime | done | (this commit) |
 | M5 | Generator | todo | |
 | M6 | Generated package + tests | todo | |
 
@@ -54,3 +54,10 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - Fix agent launched with decided rules: literals get no leading `_` and a `v` prefix for leading digits; an exceptions list for singular names; `pluralize()`; by_mrid only for mrid targets.
   - Note for M5: attributes named `date`, `time`, `open`, `max` and `sum` shadow imports/builtins, so emit qualified `datetime.date` annotations under `from __future__ import annotations`.
 - M3 fix applied: literal names (no leading `_`, `v` prefix), singularize exceptions, `pluralize()`, mrid methods only for mrid targets, `RAttribute.override_compatible` (Facility.kind is the only incompatible override).
+- M4 (opus): `src/cim100/_runtime/` + `docs/RUNTIME.md` (the M5 contract) + `tests/runtime/` (mini model written exactly as M5 must emit; a test keeps the doc blocks byte-identical to it).
+  - Design: `One`/`Many` data descriptors over private `_<end>` slots (unset slot = None/empty; Many = lazy `{id(obj): obj}` dict). Reading a Many returns a tuple snapshot. Generated Many methods are one-liners calling `Many.add/remove/clear/count/get_by_mrid`; `__init__` uses `Many.extend` and `if x is not None` guards.
+  - Inverse maintenance uses one-sided `_raw_add`/`_raw_remove`; One's `_raw_add` returns the displaced target for cleanup. Targets/inverses resolve lazily from `"module:ClassName"` and are checked once.
+  - Deviation: the runtime avoids importing `typing` (~15 ms); modules use `TYPE_CHECKING = False`. Import ~10 ms. Metas are frozen slotted classes, not NamedTuple/dataclass.
+  - Deviation from Decision 2: default mRID is `new_mrid()` (UUID4 string from a private PRNG seeded by os.urandom, ~1 us) instead of `str(uuid4())` (~6 us + 7 ms `import uuid`).
+  - mypy is clean on the runtime and mini model (`uv run --with mypy`, not a project dependency).
+  - Notes for M5: `__slots__` must be naturally sorted (ruff RUF023); `_cim_meta` on enums needs `enum.nonmember`; all 405 enums build on `CimEnum`; alias imports when two referenced classes share a py_name; overrides get `# type: ignore[assignment]` when the annotation differs.
