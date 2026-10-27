@@ -32,7 +32,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M0 | Scaffold | done | f761be9 |
 | M1 | Model fetch | done | e7853ca |
 | M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
-| M3 | Normalize | done | (this commit) |
+| M3 | Normalize | done, in review | 27fcbe3 |
 | M4 | Runtime | todo | |
 | M5 | Generator | todo | |
 | M6 | Generated package + tests | todo | |
@@ -46,3 +46,4 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
     - There are 14 self-associations.
     - Don't rely on `navigable`.
     - `0..0` would be rejected; the model has none.
+- M3 orchestrator smoke test: 2 of the 405 enums fail on `enum.Enum` because their literal names are reserved `_sunder_` names: ASTMStandardEditionKind `_00_2005_` and UKMinistryofDefenceStandardKind `_05_50__Part_65_`. A fix is needed before M5; it is pending a review agent.
