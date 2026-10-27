@@ -34,7 +34,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
 | M3 | Normalize | done (reviewed, fixes applied) | 27fcbe3, e5c7a21 |
 | M4 | Runtime | done (reviewed PASS WITH NITS, fixes applied) | 95bdfad, befc4e8 |
-| M5 | Generator + generated package (committed) | done | f350458, f85278b, (final) |
+| M5 | Generator + generated package (committed) | done | f350458, f85278b, bfad248 |
 | M6 | Generated package + tests | todo | |
 
 ## Review notes
