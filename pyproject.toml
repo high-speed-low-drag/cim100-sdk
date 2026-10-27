@@ -5,6 +5,8 @@ description = "Python SDK for all CIM100 classes, generated from the CIM UG EA m
 authors = [
     { name = "Michael Liu", email = "104720972+michael-z-liu@users.noreply.github.com" }
 ]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12"
 dependencies = []
 

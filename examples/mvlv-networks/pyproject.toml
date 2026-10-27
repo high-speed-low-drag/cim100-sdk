@@ -6,6 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Michael Liu", email = "104720972+michael-z-liu@users.noreply.github.com" }
 ]
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "cim100-sdk",

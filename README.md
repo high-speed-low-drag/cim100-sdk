@@ -1,7 +1,11 @@
 # cim100-sdk
 
 Python SDK covering all CIM100 classes (1,426 classes, 405 enums, datatypes and compounds), generated
-from the CIM UG Enterprise Architect model. Objects live in memory; CIMXML serialization is in `cim100.serialization`.
+from the CIM UG Enterprise Architect model. Objects live in memory; CIMXML (IEC 61970-552) and CIM JSON-LD
+serialization is in `cim100.serialization`.
+
+Example: [`examples/mvlv-networks`](examples/mvlv-networks) builds four real Australian MV distribution
+networks (Team-Nando/MV-LV-Networks) as CIM and exports them to CIMXML and JSON-LD.
 
 ## Install
 
@@ -177,8 +181,10 @@ Tests run offline from the committed IR snapshot. Never edit generated files; fi
 
 ## Source model and license
 
+This repository is licensed under the [Apache License 2.0](LICENSE); see also [NOTICE](NOTICE).
+
 The model is the CIM100 `.qea` (SQLite) file from `cimug-org/CIMTool`
 (`iec61970cim17v40_iec61968cim13v13b_iec62325cim03v17b_CIM100.1.1.1.qea`), pinned by commit SHA and
 sha256 in `model-source.toml` (with a mirror in `netbeheernederland/tc57cim`). The file is not committed; it
-is fetched at build time. CIMTool is licensed LGPL-2.1; check the upstream license before redistributing
-the model or code derived from it.
+is fetched at build time. The UML project file states that it is dedicated to the public domain under an
+Apache 2.0 license (the CIMTool repository that hosts it is LGPL-2.1 for its own code).

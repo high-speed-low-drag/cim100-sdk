@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 [[package]]
 name = "cim100-sdk"
 version = "0.1.0"
-source = { editable = "../cim100-sdk" }
+source = { editable = "../../" }
 
 [package.metadata]
 
@@ -60,7 +60,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cim100-sdk", editable = "../cim100-sdk" },
+    { name = "cim100-sdk", editable = "../../" },
     { name = "openpyxl", specifier = ">=3.1.5" },
 ]
 

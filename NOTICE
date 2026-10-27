@@ -1,0 +1,15 @@
+cim100-sdk
+Copyright 2026 Michael Liu
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Generated code under src/cim100/model/ and the IR snapshot under codegen/snapshot/ are
+derived from the IEC CIM UML model (CIM100: iec61970cim17v40_iec61968cim13v13b_iec62325cim03v17b,
+published by the UCA International Users Group, CIM Users Group). The UML project file states:
+"The entire work provided in the UML project file is dedicated to the public domain. As such,
+it is Open Source document using an Apache 2.0 License." The model file itself is not
+redistributed here; tools/fetch_model.py downloads it from its pinned public source.
+
+examples/mvlv-networks reads data from Team-Nando/MV-LV-Networks
+(https://github.com/Team-Nando/MV-LV-Networks, BSD-3-Clause). That data is not redistributed
+here.
