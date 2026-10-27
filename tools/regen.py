@@ -1,7 +1,7 @@
 """Regenerate ``src/cim100/model/**`` and ``src/cim100/_registry.py``.
 
-    uv run python tools/regen.py          # generate into a temp dir, format, swap in
-    uv run python tools/regen.py --check  # exit 1 and list differing files if out of date
+uv run python tools/regen.py          # generate into a temp dir, format, swap in
+uv run python tools/regen.py --check  # exit 1 and list differing files if out of date
 """
 
 from __future__ import annotations

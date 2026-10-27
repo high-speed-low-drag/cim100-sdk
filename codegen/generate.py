@@ -370,7 +370,9 @@ class Generator:
                     comments.append("type: ignore[assignment]")
                 if not a.override_compatible:
                     if inh is None:
-                        raise GenerateError(f"{c.cim_name}.{a.py_name}: ancestor attribute not found")
+                        raise GenerateError(
+                            f"{c.cim_name}.{a.py_name}: ancestor attribute not found"
+                        )
                     ann["note"] = (
                         f"overrides {inh[0].py_name}.{inh[1].py_name} ({inh[1].py_type})"
                         " with an incompatible type"
@@ -385,7 +387,9 @@ class Generator:
                 if a.guid == IDENTIFIED_OBJECT_MRID:
                     imp.rt_names.add("new_mrid")
                     params.append({"name": a.py_name, "type": ann["type"], "default": "None"})
-                    body.append(f"self.{a.py_name} = new_mrid() if {a.py_name} is None else {a.py_name}")
+                    body.append(
+                        f"self.{a.py_name} = new_mrid() if {a.py_name} is None else {a.py_name}"
+                    )
                 else:
                     params.append({"name": a.py_name, "type": ann["type"], "default": dflt})
                     body.append(f"self.{a.py_name} = {a.py_name}")
@@ -465,8 +469,18 @@ class Generator:
         item = e.item_name
         ref = f"{c.py_name}.{e.py_name}"
         out = [
-            {"name": names[0], "args": f", {item}: {tname}", "ret": "Self", "body": f"{ref}.add(self, {item})"},
-            {"name": names[1], "args": f", {item}: {tname}", "ret": "Self", "body": f"{ref}.remove(self, {item})"},
+            {
+                "name": names[0],
+                "args": f", {item}: {tname}",
+                "ret": "Self",
+                "body": f"{ref}.add(self, {item})",
+            },
+            {
+                "name": names[1],
+                "args": f", {item}: {tname}",
+                "ret": "Self",
+                "body": f"{ref}.remove(self, {item})",
+            },
             {"name": names[2], "args": "", "ret": "Self", "body": f"{ref}.clear(self)"},
             {"name": names[3], "args": "", "ret": "int", "body": f"{ref}.count(self)"},
         ]
@@ -501,7 +515,9 @@ class Generator:
     # -- one enum -----------------------------------------------------------
     def build_enum(self, e: REnum) -> str:
         return self.env.get_template("enum.py.j2").render(
-            header=_escape(f"CIM enumeration {e.cim_name} ({e.package}). Generated code: do not edit."),
+            header=_escape(
+                f"CIM enumeration {e.cim_name} ({e.package}). Generated code: do not edit."
+            ),
             name=e.py_name,
             doc=docstring(e.notes, f"CIM enumeration {e.cim_name}."),
             literals=[{"name": lit.py_name, "value": q(lit.cim_value)} for lit in e.literals],

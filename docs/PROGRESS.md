@@ -34,7 +34,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
 | M3 | Normalize | done (reviewed, fixes applied) | 27fcbe3, e5c7a21 |
 | M4 | Runtime | done (reviewed PASS WITH NITS, fixes applied) | 95bdfad, befc4e8 |
-| M5 | Generator + generated package (committed) | in-progress | |
+| M5 | Generator + generated package (committed) | done | f350458, f85278b, (final) |
 | M6 | Generated package + tests | todo | |
 
 ## Review notes
@@ -62,3 +62,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - mypy is clean on the runtime and mini model (`uv run --with mypy`, not a project dependency).
   - Notes for M5: `__slots__` must be naturally sorted (ruff RUF023); `_cim_meta` on enums needs `enum.nonmember`; all 405 enums build on `CimEnum`; alias imports when two referenced classes share a py_name; overrides get `# type: ignore[assignment]` when the annotation differs.
 - M4 (95bdfad), orchestrator decision: accept `new_mrid()` (a fast UUID4 string from a private PRNG seeded from os.urandom and reseeded after fork) instead of `str(uuid4())`. mRIDs are identifiers, not secrets. The format is still a valid UUID4. Review agent launched (sonnet).
+
+- M5 (opus): `codegen/generate.py` + `codegen/templates/*.j2` + `tools/regen.py [--check]` generate `src/cim100/model/**` (1,937 modules: 1,532 classes/datatypes/compounds, 405 enums; 115 docstring-only `__init__.py`) and `_registry.py` (`BY_GUID`, `BY_NAME` canonical only, `MODEL_VERSIONS`). Regen formats with `ruff format --config pyproject.toml`; `--check` is deterministic. Model package is ~13 MB, `_registry.py` ~0.5 MB. `cim100/__init__.py` has PEP 562 `__getattr__`/`__dir__` over `BY_NAME`; `import cim100` ~1-4 ms; importing all 1,937 modules ~0.63 s (warm pyc).
+  - Contract choices: static attr with no default is `ClassVar[T | None] = None`, with a default `ClassVar[T] = ...`; a class with no `__init__` parameters (only static attributes) omits `__init__`; an import whose py_name clashes with another reference or the runtime/annotation names gets the alias `<name>_dup<k>` (none occur in the real model); attribute docstrings are not emitted (class docstrings only); `AttrMeta`/`EndMeta` `deprecated` only for attributes (the resolved model has no end deprecation). Ruff: E501 and E741 are ignored for `src/cim100/model/**` (E501 also `_registry.py`); everything else is clean.
+  - Notes for M6: `tests/generated/test_generated.py` is the light suite (imports all, instantiates all, spot checks, regen check, import timing). 2 enums have no literals (e.g. TransformerRepairItemKind). Exhaustive checks still to write: every `EndMeta.inverse` exists on the target with matching `many/lower/upper` and points back; `cim_attributes` vs IR for every class; all 405 enums vs IR literals; each non-canonical duplicate importable by module path; deprecated flags vs IR (1 class-level enum, 16 attributes); every `Many` class has the five/four methods named by `RAssocEnd.methods`.
