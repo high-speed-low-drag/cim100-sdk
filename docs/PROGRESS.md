@@ -27,4 +27,11 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 ## Milestones
 | # | Title | Status | Commit |
 |---|-------|--------|--------|
-| P | Plan | in-progress | |
+| P | Plan (docs/PLAN.md) | done | (this commit) |
+| M0 | Scaffold | todo | |
+| M1 | Model fetch | todo | |
+| M2 | EA reader + IR | todo | |
+| M3 | Normalize | todo | |
+| M4 | Runtime | todo | |
+| M5 | Generator | todo | |
+| M6 | Generated package + tests | todo | |
