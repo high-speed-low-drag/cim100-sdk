@@ -30,7 +30,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 |---|-------|--------|--------|
 | P | Plan (docs/PLAN.md) | done | (this commit) |
 | M0 | Scaffold | done | f761be9 |
-| M1 | Model fetch | done | (this commit) |
+| M1 | Model fetch | done | e7853ca |
 | M2 | EA reader + IR | todo | |
 | M3 | Normalize | todo | |
 | M4 | Runtime | todo | |
