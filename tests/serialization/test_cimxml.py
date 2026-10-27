@@ -19,94 +19,11 @@ from cim100.serialization import (
 )
 from cim100.serialization import _common as common
 from cim100.serialization.cimxml import MD_NS, RDF_NS
+from tests.serialization.network import build_network, roots
 
 NS = (
     'xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"'
 )
-
-
-def _terminal(eq, seq, node, phases=cim100.PhaseCode.ABC):
-    return cim100.Terminal(
-        mrid=f"{eq.mrid}-t{seq}",
-        name=f"{eq.name}-T{seq}",
-        sequence_number=seq,
-        phases=phases,
-        conducting_equipment=eq,
-        connectivity_node=node,
-    )
-
-
-def build_network() -> dict[str, object]:
-    sub = cim100.Substation(name="Zone Sub", mrid="sub-1")
-    bv = cim100.BaseVoltage(name="22kV", nominal_voltage=22000.0, mrid="bv-22")
-    vl = cim100.VoltageLevel(name="22kV bus", substation=sub, base_voltage=bv, mrid="vl-1")
-    cn1 = cim100.ConnectivityNode(name="CN1", connectivity_node_container=vl, mrid="cn-1")
-    cn2 = cim100.ConnectivityNode(name="CN2", connectivity_node_container=vl, mrid="cn-2")
-    cn3 = cim100.ConnectivityNode(name="CN3", connectivity_node_container=vl, mrid="cn-3")
-    feeder = cim100.Feeder(name="F1", normal_energizing_substation=sub, mrid="feeder-1")
-    imp = cim100.PerLengthSequenceImpedance(name="Z", r=0.3, x=0.4, bch=1e-6, mrid="plsi-1")
-    line = cim100.ACLineSegment(
-        name="Line", length=12.5, per_length_impedance=imp, base_voltage=bv,
-        equipment_container=feeder, in_service=True, mrid="line-1",
-    )  # fmt: skip
-    t1 = _terminal(line, 1, cn1)
-    t2 = _terminal(line, 2, cn2)
-    phase = cim100.ACLineSegmentPhase(
-        name="phase A", phase=cim100.SinglePhaseKind.A, sequence_number=1,
-        ac_line_segment=line, mrid="phase-1",
-    )  # fmt: skip
-    tx = cim100.PowerTransformer(name="Tx", vector_group=None, equipment_container=sub, mrid="tx-1")
-    tt1 = _terminal(tx, 1, cn2)
-    tt2 = _terminal(tx, 2, cn3)
-    e1 = cim100.PowerTransformerEnd(
-        name="End1", end_number=1, rated_u=22000.0, rated_s=5e6, r=1.5, power_transformer=tx,
-        terminal=tt1, base_voltage=bv, connection_kind=cim100.WindingConnection.D, mrid="pte-1",
-    )  # fmt: skip
-    e2 = cim100.PowerTransformerEnd(
-        name="End2", end_number=2, rated_u=415.0, power_transformer=tx, terminal=tt2,
-        connection_kind=cim100.WindingConnection.Yn, mrid="pte-2",
-    )  # fmt: skip
-    rtc = cim100.RatioTapChanger(
-        name="OLTC", high_step=17, low_step=1, step=9.0, ltc_flag=True, transformer_end=e1,
-        mrid="rtc-1",
-    )  # fmt: skip
-    inj = cim100.EquivalentInjection(
-        name="Grid", r=0.1, regulation_status=False, equipment_container=sub, mrid="inj-1"
-    )
-    tinj = _terminal(inj, 1, cn1)
-    shunt = cim100.LinearShuntCompensator(
-        name="Cap", b_per_section=2.5e-4, sections=1.0, maximum_sections=4,
-        switch_on_date=dt.datetime(2024, 5, 6, 7, 8, 9), equipment_container=vl, mrid="shunt-1",
-    )  # fmt: skip
-    tshunt = _terminal(shunt, 1, cn3)
-    # Location with a compound attribute and PositionPoints (no mrid)
-    loc = cim100.Location(
-        mrid="loc-1",
-        type="geo",
-        main_address=cim100.StreetAddress(
-            street_detail=None, postal_code="2000", town_detail=None, po_box="Box <1> & 2"
-        ),
-    )
-    p1 = cim100.PositionPoint(
-        sequence_number=1, x_position="151.2", y_position="-33.8", location=loc
-    )
-    p2 = cim100.PositionPoint(
-        sequence_number=2, x_position="151.3", y_position="-33.9", location=loc
-    )
-    line.location = loc
-    # N:M association Asset <-> PowerSystemResource
-    asset = cim100.Asset(name="Asset", serial_number="SN-9", mrid="asset-1")
-    asset.add_power_system_resource(line)
-    asset.add_power_system_resource(tx)
-    # Decimal and date attributes
-    price = cim100.Price(amount=Decimal("12.3400"))
-    tariff = cim100.Tariff(name="T", start_date=dt.date(2025, 1, 2), mrid="tariff-1")
-    # an enum with a non-identifier-like literal and a datatype that holds a plain value
-    return dict(locals())
-
-
-def roots(net):
-    return [net["sub"], net["asset"], net["price"], net["tariff"], net["p1"]]
 
 
 def test_roundtrip_canonical_dump():
@@ -504,3 +421,85 @@ def test_performance_50k_objects(tmp_path, capsys):
     assert n == len(objs) > 50_000
     assert doc.warnings == []
     assert t1 - t0 < 60 and t2 - t1 < 60
+
+
+# --- S1 review fixes ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["a\x00b", "x\x01", "\x0b", "\x1f", "￾", "￿", "\ud800"])
+def test_xml_invalid_characters_raise(bad):
+    obj = cim100.ACLineSegment(mrid="seg-1", name=f"n{bad}")
+    with pytest.raises(ValueError, match=r"ACLineSegment 'seg-1': IdentifiedObject\.name"):
+        to_cimxml_string([obj])
+    # inside a compound the nested property is named too
+    loc = cim100.Location(mrid="loc", main_address=cim100.StreetAddress(po_box=bad))
+    with pytest.raises(ValueError, match=r"Location 'loc': Location\.mainAddress/StreetAddress"):
+        to_cimxml_string([loc])
+    with pytest.raises(ValueError, match="header"):
+        to_cimxml_string([], header={"description": bad})
+
+
+def test_xml_allowed_whitespace_controls_and_cr_roundtrip():
+    text = "a\tb\nc\r\nd\re é\U0001f600"
+    obj = cim100.ACLineSegment(mrid="s", name=text, description="\r")
+    xml = to_cimxml_string([obj])
+    assert "&#13;" in xml and "\r" not in xml and "\x00" not in xml
+    back = read_cimxml(io.BytesIO(xml.encode())).by_id["s"]
+    assert back.name == text and back.description == "\r"
+
+
+@pytest.mark.parametrize("mrid", ["a#b", "a b", "1abc", "x/y:z", "50%off", "é", "_lead", "-x", "a?b"])
+def test_unusual_mrids_roundtrip(mrid):
+    sub = cim100.Substation(mrid=mrid)
+    line = cim100.ACLineSegment(mrid=mrid + "!", equipment_container=sub)
+    term = cim100.Terminal(mrid=mrid + "-t", conducting_equipment=line)
+    xml = to_cimxml_string([sub])
+    ET.fromstring(xml)  # well-formed
+    doc = read_cimxml(io.BytesIO(xml.encode()))
+    assert doc.warnings == [] and doc.dangling == []
+    assert sorted(doc.by_id) == sorted([mrid, mrid + "!", mrid + "-t"])
+    assert doc.by_id[mrid + "!"].equipment_container is doc.by_id[mrid]
+    assert doc.by_id[mrid + "-t"].conducting_equipment is doc.by_id[mrid + "!"]
+    assert term.mrid == mrid + "-t"
+
+
+def test_non_ncname_mrid_wire_form():
+    sub = cim100.Substation(mrid="a#b c")
+    xml = to_cimxml_string([sub])
+    assert 'rdf:about="#_a%23b%20c"' in xml and "rdf:ID" not in xml
+    uuid = "123e4567-e89b-12d3-a456-426614174000"
+    assert f'rdf:ID="_{uuid}"' in to_cimxml_string([cim100.Substation(mrid=uuid)])
+    assert common.normalize_id("a#b") == "a#b"
+    assert common.normalize_id("#_a#b") == "a#b"
+    assert common.normalize_id("model.xml#_x") == "x"
+    assert common.normalize_id("urn:uuid:" + uuid) == uuid
+    assert common.normalize_id("_:gen0") == "gen0"
+    assert common.normalize_id("#_a%23b") == "a#b"
+
+
+def test_roleless_end_warns_once_per_end_per_call():
+    # AssemblyManifest.model_part_versions has no CIM role and is the end it is written from
+    objs = []
+    for i in range(3):
+        a = cim100.AssemblyManifest(mrid=f"am{i}")
+        a.add_model_part_version(cim100.ModelPartVersion(mrid=f"mpv{i}"))
+        objs.append(a)
+    with pytest.warns(UserWarning) as rec:
+        xml = to_cimxml_string(objs)
+    msgs = [str(w.message) for w in rec if "AssemblyManifest.model_part_versions" in str(w.message)]
+    assert len(msgs) == 1 and "no CIM role" in msgs[0]
+    assert "AssemblyManifest.model_part_versions" in xml
+    with pytest.warns(UserWarning):  # a new call warns again
+        to_cimxml_string(objs)
+
+
+def test_value_warning_text_names_class_once():
+    doc = _doc(
+        '<cim:Terminal rdf:ID="_u"><cim:ACDCTerminal.sequenceNumber>x</cim:ACDCTerminal.sequenceNumber></cim:Terminal>'
+    )
+    assert doc.warnings == ["Terminal: ACDCTerminal.sequenceNumber: cannot parse 'x' as int"]
+
+
+def test_common_docstring_counts():
+    assert "66 ends without a CIM" in " ".join(common.__doc__.split())
+    assert "33 of them" in common.__doc__ and "200" not in common.__doc__

@@ -23,13 +23,25 @@ Object ids
 Property names
     ``<DeclaringClassCimName>.<cimName>`` where the declaring class is the class whose
     ``_cim_meta`` declares the attribute or end (may be an ancestor; for an override, the
-    overriding class). An end uses its CIM role name. The 200 ends without a CIM role (they
-    come from 66 associations that carry no role name in the model) use the generated Python
-    name of the end instead, e.g. ``AssemblyManifest.model_part_versions``; this is not
-    standard CIM, so other tools will not know those properties. Readers also accept the
-    ancestor-qualified name of an overridden attribute.
+    overriding class). An end uses its CIM role name. The model declares 66 ends without a CIM
+    role; 33 of them are the end an association is written from, and only those are written
+    under the generated Python name of the end, e.g. ``AssemblyManifest.model_part_versions``
+    (the other 33 are the non-writing side, whose partner end has a role). This is not standard
+    CIM, so other tools will not know those properties; a writer emits one ``warnings.warn``
+    per such end per call (`warn_roleless`). Readers also accept the ancestor-qualified name of
+    an overridden attribute.
     ``IdentifiedObject.mRID`` is the object id, not a property, and is never written.
     Static (class-level constant) attributes are not serialized.
+
+Identifiers on the wire
+    An mrid that is a UUID is written as ``urn:uuid:<mrid>`` (JSON-LD ``@id``). CIMXML writes
+    ``rdf:ID="_<mrid>"`` when ``_<mrid>`` is a valid XML NCName (word, ``.`` and ``-`` characters; every
+    UUID is). Any other mrid (for example ``a#b`` or ``a b``) is written as
+    ``rdf:about="#_<percent-encoded mrid>"`` in CIMXML and as ``"@id": "#_<percent-encoded>"``
+    in JSON-LD. A generated id is ``_gen<N>`` in CIMXML and the blank node ``_:gen<N>`` in
+    JSON-LD. `normalize_id` is the reader side: it strips only a leading ``#``, a leading
+    ``urn:uuid:`` or ``_:``, a base-IRI prefix before ``#`` (when it looks like an IRI or file
+    name) and one leading ``_``, then percent-decodes, so an mrid like ``a#b`` survives.
 
 Values
     float ``repr`` (INF, -INF, NaN as in XSD), bool ``true``/``false``, int ``str``, Decimal
@@ -63,8 +75,11 @@ from __future__ import annotations
 import datetime as _dt
 import math
 import re
+import warnings
+from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
+from urllib.parse import quote, unquote
 
 from cim100._runtime import (
     CimCompound,
@@ -89,8 +104,10 @@ CIM_NS = "http://iec.ch/TC57/CIM100#"
 __all__ = [
     "CIM_NS",
     "AttrSpec",
+    "CimDocument",
     "ClassPlan",
     "EndSpec",
+    "ReaderBase",
     "assign_ids",
     "association_write_end",
     "canonical_dump",
@@ -99,12 +116,18 @@ __all__ = [
     "collect",
     "decode_enum",
     "decode_literal",
+    "default_header_about",
     "encode_value",
     "enum_resource",
+    "is_uuid",
     "is_write_end",
     "literal_text",
+    "normalize_id",
     "resolve_class",
     "resolve_property",
+    "warn_roleless",
+    "wire_fragment",
+    "xml_name_ok",
 ]
 
 # --------------------------------------------------------------------------------------
@@ -566,3 +589,99 @@ def canonical_dump(
                 links[es.prop] = tids
         out.append({"class": plan.cim_name, "id": ids[obj], "attrs": attrs, "links": links})
     return out
+
+
+# --------------------------------------------------------------------------------------
+# identifiers on the wire (see the module docstring)
+# --------------------------------------------------------------------------------------
+
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_NCNAME_REST_RE = re.compile(r"[\w.\-]*")
+
+
+def is_uuid(mrid: str) -> bool:
+    """True for the canonical 8-4-4-4-12 hexadecimal form."""
+    return _UUID_RE.fullmatch(mrid) is not None
+
+
+def xml_name_ok(mrid: str) -> bool:
+    """True when ``_<mrid>`` is a valid XML NCName (so ``rdf:ID="_<mrid>"`` is well-formed)."""
+    return _NCNAME_REST_RE.fullmatch(mrid) is not None
+
+
+def wire_fragment(mrid: str) -> str:
+    """``_<percent-encoded mrid>``, the fragment used for ids that are not NCNames."""
+    return "_" + quote(mrid, safe="-._~")
+
+
+def normalize_id(ref: str) -> str:
+    """The mrid named by an id or reference: ``_x``, ``#_x``, ``#x``, ``urn:uuid:x``, ``_:x``
+    and ``file.xml#_x`` all give ``x``; ``#_a%23b`` gives ``a#b``. Only a leading ``#``/``urn:uuid:``
+    and an IRI-like base before the first ``#`` are removed, so an mrid containing ``#`` stays."""
+    s = ref.strip()
+    if s.startswith("urn:uuid:"):
+        return s[9:]
+    if s.startswith("_:"):
+        return s[2:]
+    i = s.find("#")
+    if i == 0:
+        s = s[1:]
+    elif i > 0:
+        head = s[:i]
+        if "/" in head or ":" in head or "." in head:
+            s = s[i + 1 :]
+    s = s.removeprefix("_")
+    return unquote(s) if "%" in s else s
+
+
+def default_header_about(items: dict[str, Any]) -> str:
+    """Deterministic ``urn:uuid:`` identifying a header that gave no ``about``."""
+    import uuid
+
+    return "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, repr(sorted(items.items(), key=str))))
+
+
+def warn_roleless(end: EndSpec, seen: set[str]) -> None:
+    """One ``warnings.warn`` per role-less end (written under its generated name) per call."""
+    if end.meta.cim_role is None and end.prop not in seen:
+        seen.add(end.prop)
+        warnings.warn(
+            f"{end.prop}: the association end has no CIM role and is written under its "
+            f"generated name (not standard CIM)",
+            stacklevel=4,
+        )
+
+
+# --------------------------------------------------------------------------------------
+# reader scaffolding shared by both formats
+# --------------------------------------------------------------------------------------
+
+
+@dataclass
+class CimDocument:
+    """Result of ``read_cimxml`` / ``read_jsonld``."""
+
+    objects: list[CimObject] = field(default_factory=list)  # document order
+    by_id: dict[str, CimObject] = field(default_factory=dict)  # normalized id -> object
+    header: dict[str, Any] | None = None
+    warnings: list[str] = field(default_factory=list)
+    dangling: list[tuple[str, str, str]] = field(default_factory=list)  # (source id, property, ref)
+
+
+class ReaderBase:
+    """Problem collection: a problem is counted per distinct message, or raised when strict."""
+
+    def __init__(self, strict: bool, error_cls: type[Exception]) -> None:
+        self.strict = strict
+        self.error_cls = error_cls
+        self.doc = CimDocument()
+        self._counts: dict[str, int] = {}
+
+    def warn(self, key: str, message: str | None = None) -> None:
+        if self.strict:
+            raise self.error_cls(message or key)
+        self._counts[key] = self._counts.get(key, 0) + 1
+
+    def finish(self) -> None:
+        for key, n in self._counts.items():
+            self.doc.warnings.append(key if n == 1 else f"{key} (x{n})")

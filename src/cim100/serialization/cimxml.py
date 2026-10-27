@@ -12,7 +12,10 @@ Output shape::
       </cim:ACLineSegment>
     </rdf:RDF>
 
-Objects without an mrid get ``rdf:ID="_gen<N>"``. A compound attribute is written with
+Objects without an mrid get ``rdf:ID="_gen<N>"``. An mrid for which ``_<mrid>`` is not a valid
+XML NCName (e.g. ``a#b``) is written ``rdf:about="#_<percent-encoded mrid>"`` and referenced the
+same way; the reader decodes it. Strings with XML-invalid control characters raise ``ValueError``
+at write time (``\\r`` is preserved as ``&#13;``). A compound attribute is written with
 ``rdf:parseType="Resource"``; an enum value as ``rdf:resource="<ns>Enum.literal"``.
 """
 
@@ -20,21 +23,28 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 
 from cim100._runtime import CimCompound, CimEnum, CimObject
 from cim100.serialization._common import (
     CIM_NS,
     AttrSpec,
+    CimDocument,
     EndSpec,
+    ReaderBase,
     assign_ids,
     class_plan,
     collect,
     decode_enum,
+    default_header_about,
     enum_resource,
     literal_text,
+    normalize_id,
     resolve_class,
+    warn_roleless,
+    wire_fragment,
+    xml_name_ok,
 )
 
 TYPE_CHECKING = False
@@ -67,7 +77,23 @@ class CimXmlError(ValueError):
 # --------------------------------------------------------------------------------------
 
 
-def _write_value(el: ET.Element, value: Any, namespace: str) -> None:
+# characters XML 1.0 cannot carry: controls other than \t \n \r, surrogates, U+FFFE, U+FFFF
+_XML_BAD = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+_CR = "\x00"  # stands in for \r while building (U+0000 can never occur in valid text)
+
+
+def _xml_text(value: Any, where: str, prop: str) -> str:
+    text = literal_text(value)
+    m = _XML_BAD.search(text)
+    if m is not None:
+        raise ValueError(
+            f"{where}: {prop} contains the character U+{ord(m.group()):04X}, "
+            f"which is not valid in XML (use the JSON-LD format or remove it)"
+        )
+    return text.replace("\r", _CR) if "\r" in text else text
+
+
+def _write_value(el: ET.Element, value: Any, namespace: str, where: str, prop: str) -> None:
     if isinstance(value, CimEnum):
         el.set("rdf:resource", enum_resource(value, namespace))
     elif isinstance(value, CimCompound):
@@ -76,20 +102,18 @@ def _write_value(el: ET.Element, value: Any, namespace: str) -> None:
         for s in plan.attrs:
             v = getattr(value, s.name, None)
             if v is not None:
-                _write_value(ET.SubElement(el, "cim:" + s.prop), v, namespace)
+                _write_value(
+                    ET.SubElement(el, "cim:" + s.prop), v, namespace, where, f"{prop}/{s.prop}"
+                )
     else:
-        el.text = literal_text(value)
+        el.text = _xml_text(value, where, prop)
 
 
 def _header_element(header: dict[str, Any]) -> ET.Element:
     items = dict(header)
     about = items.pop("about", None)
     if about is None:
-        import uuid
-
-        about = "urn:uuid:" + str(
-            uuid.uuid5(uuid.NAMESPACE_URL, repr(sorted(items.items(), key=str)))
-        )
+        about = default_header_about(items)
     el = ET.Element("md:FullModel", {"rdf:about": str(about)})
     for key, val in items.items():
         name = key if key.startswith("Model.") else f"Model.{key}"
@@ -99,7 +123,7 @@ def _header_element(header: dict[str, Any]) -> ET.Element:
             if short in _HEADER_RESOURCES:
                 sub.set("rdf:resource", str(v))
             else:
-                sub.text = literal_text(v)
+                sub.text = _xml_text(v, "header", name)
     return el
 
 
@@ -119,15 +143,18 @@ def _build(
     root = ET.Element("rdf:RDF", attrib)
     if header is not None:
         root.append(_header_element(header))
+    refs = {o: _wire_ids(i) for o, i in ids.items()}
+    warned: set[str] = set()
     for obj in objs:
         plan = class_plan(type(obj))
-        el = ET.SubElement(root, "cim:" + plan.cim_name, {"rdf:ID": "_" + ids[obj]})
+        el = ET.SubElement(root, "cim:" + plan.cim_name, dict([refs[obj][0]]))
+        where = f"{plan.cim_name} {ids[obj]!r}"
         for a in plan.attrs:
             if a.is_id:
                 continue
             v = getattr(obj, a.name, None)
             if v is not None:
-                _write_value(ET.SubElement(el, "cim:" + a.prop), v, namespace)
+                _write_value(ET.SubElement(el, "cim:" + a.prop), v, namespace, where, a.prop)
         for e in plan.ends:
             if not (e.writes or write_both_ends):
                 continue
@@ -137,14 +164,26 @@ def _build(
             else:
                 targets = [v] if v is not None and v in order else []
             tag = "cim:" + e.prop
+            if targets:
+                warn_roleless(e, warned)
             for t in targets:
-                ET.SubElement(el, tag, {"rdf:resource": "#_" + ids[t]})
+                ET.SubElement(el, tag, {"rdf:resource": refs[t][1]})
     ET.indent(root, space="  ")
     return root
 
 
+def _wire_ids(ident: str) -> tuple[tuple[str, str], str]:
+    """``((attribute, value), reference)`` of an id: ``rdf:ID="_x"`` / ``#_x`` when ``_x`` is an
+    XML NCName, else ``rdf:about="#_<percent-encoded>"`` for both."""
+    if xml_name_ok(ident):
+        return ("rdf:ID", "_" + ident), "#_" + ident
+    ref = "#" + wire_fragment(ident)
+    return ("rdf:about", ref), ref
+
+
 def _serialize(root: ET.Element) -> bytes:
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True) + b"\n"
+    data = ET.tostring(root, encoding="utf-8", xml_declaration=True) + b"\n"
+    return data.replace(b"\x00", b"&#13;") if b"\x00" in data else data
 
 
 def to_cimxml_string(
@@ -192,27 +231,6 @@ def write_cimxml(
 # --------------------------------------------------------------------------------------
 
 
-@dataclass
-class CimDocument:
-    """Result of `read_cimxml`."""
-
-    objects: list[CimObject] = field(default_factory=list)  # document order
-    by_id: dict[str, CimObject] = field(default_factory=dict)  # normalized id -> object
-    header: dict[str, Any] | None = None
-    warnings: list[str] = field(default_factory=list)
-    dangling: list[tuple[str, str, str]] = field(default_factory=list)  # (source id, property, ref)
-
-
-def _normalize_id(ref: str) -> str:
-    """``_x``, ``#_x``, ``#x``, ``urn:uuid:x`` (and ``file.xml#_x``) all give ``x``."""
-    s = ref.strip()
-    if s.startswith("urn:uuid:"):
-        return s[9:]
-    if "#" in s:
-        s = s.rpartition("#")[2]
-    return s.removeprefix("_")
-
-
 def _split(tag: str) -> tuple[str, str]:
     if tag.startswith("{"):
         ns, _, local = tag[1:].partition("}")
@@ -220,25 +238,10 @@ def _split(tag: str) -> tuple[str, str]:
     return "", tag
 
 
-class _Reader:
+class _Reader(ReaderBase):
     def __init__(self, strict: bool) -> None:
-        self.strict = strict
-        self.doc = CimDocument()
-        self._counts: dict[str, int] = {}
+        super().__init__(strict, CimXmlError)
         self._class_cache: dict[str, type | None] = {}
-
-    def warn(self, key: str, message: str | None = None) -> None:
-        """Record a problem (counted per distinct key) or raise it when strict."""
-        if self.strict:
-            raise CimXmlError(message or key)
-        if key in self._counts:
-            self._counts[key] += 1
-        else:
-            self._counts[key] = 1
-
-    def finish(self) -> None:
-        for key, n in self._counts.items():
-            self.doc.warnings.append(key if n == 1 else f"{key} (x{n})")
 
     # -- pass 1 ---------------------------------------------------------------------
 
@@ -262,7 +265,7 @@ class _Reader:
             if not ref:
                 self.warn(f"{local} element without rdf:ID/rdf:about skipped")
                 continue
-            key = _normalize_id(ref)
+            key = normalize_id(ref)
             obj = doc.by_id.get(key)
             if obj is None:
                 plan = class_plan(cls)  # type: ignore[arg-type]
@@ -313,9 +316,9 @@ class _Reader:
                     self.warn(f"unknown property {prop!r} on {plan.cim_name}")
                 continue
             if isinstance(spec, EndSpec):
-                self._link(obj, spec, child, _normalize_id(src))
+                self._link(obj, spec, child, normalize_id(src))
                 continue
-            value = self._value(child, spec, f"{plan.cim_name}.{prop}")
+            value = self._value(child, spec, f"{plan.cim_name}: {prop}")
             if value is not None:
                 setattr(obj, spec.name, value)
 
@@ -324,7 +327,7 @@ class _Reader:
         if ref is None:
             self.warn(f"{spec.prop} has no rdf:resource (nested objects are not supported)")
             return
-        target = self.doc.by_id.get(_normalize_id(ref))
+        target = self.doc.by_id.get(normalize_id(ref))
         if target is None:
             self.doc.dangling.append((src, spec.prop, ref))
             self.warn(f"dangling reference in {spec.prop}")
