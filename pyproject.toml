@@ -34,3 +34,9 @@ target-version = "py312"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff.lint.per-file-ignores]
+# Generated code: long CIM docstring headers, module paths and GUID tables, and CIM attribute
+# names such as `l` (E741) come straight from the model.
+"src/cim100/model/**" = ["E501", "E741"]
+"src/cim100/_registry.py" = ["E501"]

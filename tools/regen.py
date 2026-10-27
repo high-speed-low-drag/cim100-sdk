@@ -17,8 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from codegen.generate import generate  # noqa: E402
-from codegen.normalize import load_snapshot, normalize  # noqa: E402
+from codegen.generate import generate
+from codegen.normalize import load_snapshot, normalize
 
 PKG = ROOT / "src" / "cim100"
 OUTPUTS = ("model", "_registry.py")
