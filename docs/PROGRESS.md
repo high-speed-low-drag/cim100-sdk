@@ -32,7 +32,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M0 | Scaffold | done | f761be9 |
 | M1 | Model fetch | done | e7853ca |
 | M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
-| M3 | Normalize | todo | |
+| M3 | Normalize | done | (this commit) |
 | M4 | Runtime | todo | |
 | M5 | Generator | todo | |
 | M6 | Generated package + tests | todo | |
