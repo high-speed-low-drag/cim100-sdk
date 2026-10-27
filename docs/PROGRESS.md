@@ -33,8 +33,8 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M1 | Model fetch | done | e7853ca |
 | M2 | EA reader + IR | done (reviewed: PASS WITH NITS) | 45e644b |
 | M3 | Normalize | done (reviewed, fixes applied) | 27fcbe3, e5c7a21 |
-| M4 | Runtime | done | (this commit) |
-| M5 | Generator | todo | |
+| M4 | Runtime | done (reviewed PASS WITH NITS, fixes applied) | 95bdfad, befc4e8 |
+| M5 | Generator + generated package (committed) | in-progress | |
 | M6 | Generated package + tests | todo | |
 
 ## Review notes
