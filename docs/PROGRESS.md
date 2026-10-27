@@ -23,12 +23,13 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 - 2026-10-27: Code is generated from the EA model, not written by hand. (Decided by recommendation; Michael gave blanket autonomy on 2026-10-27.)
 - 2026-10-27: Use the .qea (SQLite) instead of the .eap (Access). It is the same model, needs no Access reader, and is the newer cim17v40 revision.
 - 2026-10-27: Keep the repo local only. No GitHub repo or push without Michael's approval.
+- 2026-10-27: Work happens on branch `feat/cim100-sdk`; `main` holds only plan + scaffold. M0 was self-reviewed (trivial scaffold), no review agent.
 
 ## Milestones
 | # | Title | Status | Commit |
 |---|-------|--------|--------|
 | P | Plan (docs/PLAN.md) | done | (this commit) |
-| M0 | Scaffold | done | (this commit) |
+| M0 | Scaffold | done | f761be9 |
 | M1 | Model fetch | todo | |
 | M2 | EA reader + IR | todo | |
 | M3 | Normalize | todo | |
