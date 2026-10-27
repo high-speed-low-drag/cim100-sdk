@@ -2,7 +2,7 @@
 
 Builds CIM100 models of four real Australian MV distribution networks with the generated
 [`cim100-sdk`](../cim100-sdk). Package `mvlv_cim` reads the workbooks and returns an in-memory
-object graph. Exporting it (CIMXML / JSON-LD) is milestone S4.
+object graph. `mvlv-cim` exports it as CIMXML and JSON-LD and checks the round trip (see Export).
 
 | Workbook | Type | Feeder | Lines | Dist. transformers | ISO | REG | In-line | Caps |
 |---|---|---|---:|---:|---:|---:|---:|---:|
@@ -41,6 +41,26 @@ net.validate()  # validate() messages without the known instance_set quirk
 ```
 
 Modules: `excel.py` (typed row loading), `builder.py`, `phases.py`, `ids.py` (mRIDs).
+
+## Export
+
+```
+uv run mvlv-cim export [--network N ...|--all] [--format cimxml|jsonld|both] [--out out/] \
+                       [--source ../MV-LV-Networks] [--created 2024-01-01T00:00:00Z]
+uv run mvlv-cim verify [--all]    # build, write, read back, compare; 0 warnings / dangling expected
+uv run mvlv-cim summary           # object counts per class and network
+```
+
+`export` writes `out/Network_<n>_<name>.xml` and/or `.jsonld`, one file per network with every
+object (including the shared BaseVoltages and region). Each has a header (`md:FullModel` or the
+JSON-LD dataset description) with `created` (source file mtime unless `--created`), description,
+modelingAuthoritySet, the source repo URL and the BSD-3-Clause licence. Output is deterministic.
+`out/` is gitignored. Default source: `/home/michael/claude_code/MV-LV-Networks`.
+
+`verify` compares `canonical_dump` of the built graph with the CIMXML-read and JSON-LD-read graphs,
+the two read graphs with each other, and two exports byte for byte. All four networks pass; sizes,
+times and sample objects are in [docs/EXPORT_REPORT.md](docs/EXPORT_REPORT.md). Tests:
+`tests/test_export.py` (N3, N4 by default; `MVLV_FULL=1` adds N1, N2).
 
 ## Containers
 

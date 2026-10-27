@@ -3,7 +3,7 @@
 | Milestone | Scope | Status |
 |---|---|---|
 | S3 | Excel to CIM builder for the four MV networks (`mvlv_cim`) | done |
-| S4 | Export to CIMXML / JSON-LD and round-trip | todo (in cim100-sdk plan) |
+| S4 | Export to CIMXML / JSON-LD and round-trip (`mvlv-cim`) | done |
 
 ## S3 (branch `feat/builder`)
 
@@ -65,3 +65,10 @@
   GeographicalRegion objects by mRID.
 - `Terminal.connected = True` is set everywhere.
 - `RatioTapChanger.step` is a float.
+
+## S4 (branch `feat/builder`)
+
+- `export.py` (workbook discovery, header, writers), `verify.py` (round trip), `cli.py` (`mvlv-cim export|verify|summary`).
+- All four networks round-trip in CIMXML and JSON-LD, the two read graphs are equal, exports are byte-identical, 0 warnings, 0 dangling. See `docs/EXPORT_REPORT.md`.
+- One builder fix found by the round trip: `RatioTapChanger.step` of fixed taps is now a float (was int, read back as float).
+- Tests: `tests/test_export.py`; N1 and N2 need `MVLV_FULL=1`. `MVLV_FULL=1 uv run pytest -q`: 53 pass. SDK not changed.
