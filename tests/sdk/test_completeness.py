@@ -7,12 +7,7 @@ import decimal
 
 from cim100._runtime import CimCompound, CimDatatype, CimEnum, CimObject, resolve
 
-KIND_BASE = {
-    "class": CimObject,
-    "cimdatatype": CimDatatype,
-    "compound": CimCompound,
-    "enumeration": CimEnum,
-}
+KIND_BASE = {"class": CimObject, "cimdatatype": CimDatatype, "compound": CimCompound, "enumeration": CimEnum}
 PRIM_PY = {
     "Float": "float",
     "String": "str",
@@ -49,9 +44,7 @@ def test_classifier_identity(ir, by_guid):
     f = []
     expected = {c.guid: c for c in ir.classifiers if c.kind != "primitive"}
     if set(expected) != set(by_guid):
-        f.append(
-            f"guid sets differ: missing={sorted(set(expected) - set(by_guid))[:5]} extra={sorted(set(by_guid) - set(expected))[:5]}"
-        )
+        f.append(f"guid sets differ: missing={sorted(set(expected) - set(by_guid))[:5]} extra={sorted(set(by_guid) - set(expected))[:5]}")
     for guid, c in expected.items():
         cls = by_guid.get(guid)
         if cls is None:
@@ -61,9 +54,7 @@ def test_classifier_identity(ir, by_guid):
             f.append(f"{c.name}: no own _cim_meta")
             continue
         if (meta.guid, meta.cim_name, meta.package, meta.kind) != (guid, c.name, c.package, c.kind):
-            f.append(
-                f"{c.name}: meta {(meta.guid, meta.cim_name, meta.package, meta.kind)} != IR {(guid, c.name, c.package, c.kind)}"
-            )
+            f.append(f"{c.name}: meta {(meta.guid, meta.cim_name, meta.package, meta.kind)} != IR {(guid, c.name, c.package, c.kind)}")
         if not issubclass(cls, KIND_BASE[c.kind]):
             f.append(f"{c.name}: {cls.__mro__} lacks base for kind {c.kind}")
         if cls.__module__.rsplit(".", 1)[0] != cls.__module__.rsplit(".", 1)[0]:
@@ -104,18 +95,14 @@ def _default_ok(cname, meta, ir_attr, by_guid) -> bool:
         USED_QUIRKS.add((cname, ir_attr.name))
         return meta.default is None
     if meta.kind == "enumeration":
-        return (
-            isinstance(meta.default, CimEnum)
-            and meta.default.value == ir_attr.default
-            and (type(meta.default) is by_guid[ir_attr.type_guid])
+        return isinstance(meta.default, CimEnum) and meta.default.value == ir_attr.default and (
+            type(meta.default) is by_guid[ir_attr.type_guid]
         )
     if meta.py_type == "date":
-        return type(meta.default) is datetime.date and meta.default == datetime.date.fromisoformat(
-            ir_attr.default
+        return (
+            type(meta.default) is datetime.date and meta.default == datetime.date.fromisoformat(ir_attr.default)
         )
-    return str(meta.default) == ir_attr.default or repr(meta.default).strip(
-        "'\""
-    ) == ir_attr.default.strip("'\"")
+    return str(meta.default) == ir_attr.default or repr(meta.default).strip("'\"") == ir_attr.default.strip("'\"")
 
 
 def test_attributes(ir, by_guid, ir_classifiers):
@@ -126,9 +113,7 @@ def test_attributes(ir, by_guid, ir_classifiers):
         metas = {a.cim_name: a for a in by_guid[c.guid]._cim_meta.attributes}
         if len(metas) != len(c.attributes):
             f.append(f"{c.name}: {len(metas)} attributes != IR {len(c.attributes)}")
-        if [a.cim_name for a in by_guid[c.guid]._cim_meta.attributes] != [
-            a.name for a in c.attributes
-        ]:
+        if [a.cim_name for a in by_guid[c.guid]._cim_meta.attributes] != [a.name for a in c.attributes]:
             f.append(f"{c.name}: attribute order/names differ")
         for a in c.attributes:
             m = metas.get(a.name)
@@ -138,16 +123,9 @@ def test_attributes(ir, by_guid, ir_classifiers):
             t = ir_classifiers[a.type_guid]
             want_type = PRIM_PY[t.name] if t.kind == "primitive" else t.name
             if (m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated) != (
-                a.lower,
-                a.upper,
-                want_type,
-                t.kind,
-                a.is_static,
-                a.deprecated,
+                a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated
             ):
-                f.append(
-                    f"{c.name}.{a.name}: {(m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated)} != {(a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated)}"
-                )
+                f.append(f"{c.name}.{a.name}: {(m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated)} != {(a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated)}")
             if not _default_ok(c.name, m, a, by_guid):
                 f.append(f"{c.name}.{a.name}: default {m.default!r} != IR {a.default!r}")
     assert USED_QUIRKS == KNOWN_MODEL_QUIRKS, "stale entries in KNOWN_MODEL_QUIRKS"
@@ -207,9 +185,7 @@ def test_associations_produce_two_ends(ir, by_guid, resolved):
                 f.append(f"{owner.__name__}.{m.name}: target {m.target} != IR {end.target}")
             many = end.upper is None or end.upper > 1
             if (m.lower, m.upper, m.many) != (end.lower, end.upper, many):
-                f.append(
-                    f"{owner.__name__}.{m.name}: card {(m.lower, m.upper, m.many)} != {(end.lower, end.upper, many)}"
-                )
+                f.append(f"{owner.__name__}.{m.name}: card {(m.lower, m.upper, m.many)} != {(end.lower, end.upper, many)}")
     assert n == 2748
     actual = {(cls._cim_meta.guid, e.name) for cls in by_guid.values() for e in cls._cim_meta.ends}
     if actual != expected_keys:
@@ -218,16 +194,8 @@ def test_associations_produce_two_ends(ir, by_guid, resolved):
 
 
 def test_datatype_value_types(by_guid):
-    expected = {
-        "float": float,
-        "int": int,
-        "str": str,
-        "bool": bool,
-        "datetime": datetime.datetime,
-        "date": datetime.date,
-        "time": datetime.time,
-        "Decimal": decimal.Decimal,
-    }
+    expected = {"float": float, "int": int, "str": str, "bool": bool, "datetime": datetime.datetime,
+                "date": datetime.date, "time": datetime.time, "Decimal": decimal.Decimal}
     f = []
     for cls in by_guid.values():
         if issubclass(cls, CimDatatype):

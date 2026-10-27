@@ -163,9 +163,7 @@ def test_symmetric_end_is_its_own_inverse():
     class Peer(IdentifiedObject):
         __slots__ = ("_friends", "_partner")
         partner: One[Peer] = One(EndMeta("partner", "Partner", "x:Peer", False, 0, 1, "partner"))
-        friends: Many[Peer] = Many(
-            EndMeta("friends", "Friends", "x:Peer", True, 0, None, "friends")
-        )
+        friends: Many[Peer] = Many(EndMeta("friends", "Friends", "x:Peer", True, 0, None, "friends"))
         _cim_meta = ClassMeta("Peer", "test", "{peer}", ends=(partner.meta, friends.meta))
 
     Peer.partner._cls = Peer  # local class: not importable by its string reference

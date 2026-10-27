@@ -131,7 +131,7 @@ def _build(
         for e in plan.ends:
             if not (e.writes or write_both_ends):
                 continue
-            v = e.desc.__get__(obj)
+            v = e.desc.__get__(obj)  # type: ignore[attr-defined]
             if e.many:
                 targets = sorted((t for t in v if t in order), key=order.__getitem__)
             else:

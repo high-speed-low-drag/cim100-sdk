@@ -20,7 +20,6 @@ def _src(name, url, data):
 def _fake_download(files):
     def dl(url, out_path):
         out_path.write_bytes(files[url])  # KeyError simulates a failing source
-
     return dl
 
 

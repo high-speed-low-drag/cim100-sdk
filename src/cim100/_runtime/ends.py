@@ -46,9 +46,7 @@ class _End(Generic[T]):
 
     def __init__(self, meta: EndMeta) -> None:
         if meta.many != isinstance(self, Many):
-            raise TypeError(
-                f"end {meta.name!r}: EndMeta.many={meta.many} needs the other descriptor"
-            )
+            raise TypeError(f"end {meta.name!r}: EndMeta.many={meta.many} needs the other descriptor")
         self.meta = meta
         self.name = meta.name
         self._cls = None

@@ -424,12 +424,14 @@ def association_write_end(end: _End[Any] | EndMeta, owner: type | None = None) -
     if isinstance(end, EndMeta):
         if owner is None:
             raise TypeError("association_write_end(EndMeta) needs the owner class")
-        end = getattr(owner, end.name)
-    inv = end.inverse
-    if end.meta.many != inv.meta.many:
-        return inv if end.meta.many else end
-    a, b = (_end_key(end), end.name), (_end_key(inv), inv.name)
-    return end if a <= b else inv
+        desc: _End[Any] = getattr(owner, end.name)
+    else:
+        desc = end
+    inv = desc.inverse
+    if desc.meta.many != inv.meta.many:
+        return inv if desc.meta.many else desc
+    a, b = (_end_key(desc), desc.name), (_end_key(inv), inv.name)
+    return desc if a <= b else inv
 
 
 def is_write_end(end: _End[Any]) -> bool:
@@ -449,7 +451,7 @@ def _content_key(obj: CimObject, plan: ClassPlan) -> tuple[Any, ...]:
     attrs = tuple(repr(getattr(obj, s.name, None)) for s in plan.attrs)
     links = []
     for s in plan.ends:
-        v = s.desc.__get__(obj)
+        v = s.desc.__get__(obj)  # type: ignore[attr-defined]
         for t in v if s.many else (() if v is None else (v,)):
             m = getattr(t, "mrid", None)
             if m is not None:
@@ -475,12 +477,12 @@ def collect(objects: Iterable[CimObject], include_reachable: bool = True) -> lis
             i += 1
             plan = class_plan(type(obj))
             for d in plan.one_descs:
-                t = d.__get__(obj)
+                t = d.__get__(obj)  # type: ignore[attr-defined]
                 if t is not None and t not in seen:
                     seen[t] = None
                     stack.append(t)
             for d in plan.many_descs:
-                for t in d.__get__(obj):
+                for t in d.__get__(obj):  # type: ignore[attr-defined]
                     if t not in seen:
                         seen[t] = None
                         stack.append(t)
@@ -556,11 +558,11 @@ def canonical_dump(
             if v is not None and not s.is_id:
                 attrs[s.prop] = encode_value(v)
         links = {}
-        for s in plan.ends:
-            v = s.desc.__get__(obj)
-            targets = v if s.many else (() if v is None else (v,))
+        for es in plan.ends:
+            v = es.desc.__get__(obj)  # type: ignore[attr-defined]
+            targets = v if es.many else (() if v is None else (v,))
             tids = sorted(ids[t] for t in targets if t in ids)
             if tids:
-                links[s.prop] = tids
+                links[es.prop] = tids
         out.append({"class": plan.cim_name, "id": ids[obj], "attrs": attrs, "links": links})
     return out

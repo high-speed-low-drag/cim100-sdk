@@ -122,15 +122,10 @@ def test_duplicate_classes(rm):
         assert len({c.module for c in copies}) == len(copies)
     trk = [e for e in rm.enums if e.cim_name == "TroubleReportingKind"]
     assert sorted(e.py_name for e in trk) == ["TroubleReportingKind", "TroubleReportingKind_2"]
-    assert all(
-        e.module.endswith(("trouble_reporting_kind", "trouble_reporting_kind_2")) for e in trk
-    )
+    assert all(e.module.endswith(("trouble_reporting_kind", "trouble_reporting_kind_2")) for e in trk)
     ver = by_name(rm, "IEC61968CIMVersion")
     assert sorted(c.py_name for c in ver) == [
-        "IEC61968CIMVersion",
-        "IEC61968CIMVersion",
-        "IEC61968CIMVersion_2",
-    ]
+        "IEC61968CIMVersion", "IEC61968CIMVersion", "IEC61968CIMVersion_2"]
     canon = next(c for c in ver if c.is_canonical)
     assert canon.package == "TC57CIM/IEC61968"
     # different packages: names kept, only module differs
@@ -150,9 +145,7 @@ def test_unique_names_and_modules(rm):
     mods = [x.module for x in (*rm.classes, *rm.enums)]
     assert len(mods) == len(set(mods))
     assert all(m.startswith("cim100.model.") for m in mods)
-    assert all(
-        part.isidentifier() and not keyword.iskeyword(part) for m in mods for part in m.split(".")
-    )
+    assert all(part.isidentifier() and not keyword.iskeyword(part) for m in mods for part in m.split("."))
 
 
 def test_literals(rm):
@@ -207,11 +200,7 @@ def test_no_leading_underscore(rm):
 
 def test_mrid_methods_only_with_mrid(rm, classes):
     def has_mrid(c):
-        return any(
-            a.py_name == "mrid"
-            for k in (c, *(classes[g] for g in c.ancestors))
-            for a in k.attributes
-        )
+        return any(a.py_name == "mrid" for k in (c, *(classes[g] for g in c.ancestors)) for a in k.attributes)
 
     n = 0
     for c in rm.classes:
@@ -226,13 +215,8 @@ def test_defaults_evaluate(rm):
     from datetime import date, datetime, time
     from decimal import Decimal
 
-    ns = {
-        e.py_name: __import__("enum").Enum(
-            e.py_name, [(l.py_name, l.cim_value) for l in e.literals]
-        )
-        for e in rm.enums
-        if e.is_canonical
-    }
+    ns = {e.py_name: __import__("enum").Enum(e.py_name, [(l.py_name, l.cim_value) for l in e.literals])
+          for e in rm.enums if e.is_canonical}
     ns.update(_dt=__import__("datetime"), Decimal=Decimal, datetime=datetime, date=date, time=time)
     n = 0
     for c in rm.classes:
@@ -244,12 +228,8 @@ def test_defaults_evaluate(rm):
 
 
 def test_facility_kind_incompatible(rm):
-    bad = [
-        (c.cim_name, a.cim_name)
-        for c in rm.classes
-        for a in c.attributes
-        if a.overrides and not a.override_compatible
-    ]
+    bad = [(c.cim_name, a.cim_name) for c in rm.classes for a in c.attributes
+           if a.overrides and not a.override_compatible]
     assert bad == [("Facility", "kind")]
 
 
@@ -303,7 +283,7 @@ def test_generated_roles(rm):
     tgt = {c.guid: c for c in rm.classes}
     for e in gen:
         assert e.cim_role is None
-        base = e.renamed_from or e.py_name
+        base = (e.renamed_from or e.py_name)
         stem = snake(tgt[e.target_guid].py_name)
         assert base.startswith(stem.removesuffix("y"))
         assert base.endswith("s") == e.many or not e.many
@@ -324,12 +304,7 @@ def test_spot_terminal(rm, classes):
     assert back.item_name == "terminal"
     assert back.many
     assert back.methods == (
-        "add_terminal",
-        "remove_terminal",
-        "clear_terminals",
-        "num_terminal",
-        "get_terminal_by_mrid",
-    )
+        "add_terminal", "remove_terminal", "clear_terminals", "num_terminal", "get_terminal_by_mrid")
 
 
 def test_spot_ac_line_segment_r(rm):
@@ -362,9 +337,7 @@ def test_keyword_escape(rm):
     assert a.py_name == "class_"
 
 
-@pytest.mark.parametrize(
-    "cname", ["FACTSDevice", "Facility", "StructureSupport", "UndergroundStructure"]
-)
+@pytest.mark.parametrize("cname", ["FACTSDevice", "Facility", "StructureSupport", "UndergroundStructure"])
 def test_kind_override(rm, classes, cname):
     a = next(x for x in one(rm, cname).attributes if x.cim_name == "kind")
     assert a.py_name == "kind"
@@ -405,22 +378,15 @@ def test_end_collisions_resolved(rm, classes, cname, role):
     # inverses point at the final names
     for e in ends:
         og, oname = e.inverse
-        assert any(
-            x.py_name == oname and x.inverse == (c.guid, e.py_name) for x in classes[og].ends
-        )
+        assert any(x.py_name == oname and x.inverse == (c.guid, e.py_name) for x in classes[og].ends)
     names = [e.py_name for e in ends]
     assert len(names) == len(set(names))
 
 
 def test_known_renames_present(rm):
     renamed = {(c.cim_name, e.cim_role) for c in rm.classes for e in c.ends if e.renamed_from}
-    for key in [
-        ("Customer", "Customer"),
-        ("InterrupterUnit", "Bushing"),
-        ("Quantity", "quantity"),
-        ("UnplannedOutage", "Incident"),
-        ("EndDevice", "ServiceLocation"),
-    ]:
+    for key in [("Customer", "Customer"), ("InterrupterUnit", "Bushing"), ("Quantity", "quantity"),
+                ("UnplannedOutage", "Incident"), ("EndDevice", "ServiceLocation")]:
         assert key in renamed, key
 
 

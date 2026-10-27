@@ -113,10 +113,7 @@ def test_by_mrid_lookup_on_many_ends(resolved, by_guid):
             owner, target = by_guid[c.guid](), by_guid[e.target_guid]()
             target.mrid = "m-1"
             getattr(owner, e.methods[0])(target)
-            if (
-                getattr(owner, getter)("m-1") is not target
-                or getattr(owner, getter)("other") is not None
-            ):
+            if getattr(owner, getter)("m-1") is not target or getattr(owner, getter)("other") is not None:
                 f.append(f"{c.cim_name}.{e.py_name}: {getter} lookup wrong")
     assert n > 0
     check(f)

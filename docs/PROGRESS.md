@@ -91,7 +91,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
   - explicit phases for SWER?
   - repo: new cim100-networks repo vs SDK examples/?
 
-| S1 | CIMXML | in-progress | |
+| S1 | CIMXML | done | Writer/reader + `serialization/_common.py` (shared with S2); 56k objects: write 3.2 s, read 1.5 s |
 | S2 | JSON-LD | todo | |
 | S3 | Network builder | todo | |
 | S4 | Export + round-trip | todo | |

@@ -13,9 +13,7 @@ __version__ = "0.1.0"
 
 
 def __getattr__(name: str) -> object:
-    if name.startswith(
-        "_"
-    ):  # dunder / private probes (__path__, _registry, ...) are never CIM names
+    if name.startswith("_"):  # dunder / private probes (__path__, _registry, ...) are never CIM names
         raise AttributeError(f"module 'cim100' has no attribute {name!r}")
     ref = _import_module("cim100._registry").BY_NAME.get(name)
     if ref is None:

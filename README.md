@@ -1,7 +1,7 @@
 # cim100-sdk
 
 Python SDK covering all CIM100 classes (1,426 classes, 405 enums, datatypes and compounds), generated
-from the CIM UG Enterprise Architect model. In-memory objects only for now (no serialization).
+from the CIM UG Enterprise Architect model. Objects live in memory; CIMXML serialization is in `cim100.serialization`.
 
 ## Install
 
@@ -60,6 +60,42 @@ print(Substation(name="S").validate())
 
 `copy.deepcopy` and `pickle` give a separate, consistent graph (cycles are fine).
 `copy.copy` raises `TypeError`, because a shallow copy would share half-links with the original.
+
+## Serialization (CIMXML)
+
+`cim100.serialization` writes and reads IEC 61970-552 RDF/XML (stdlib only), generically for every
+class, driven by `_cim_meta`.
+
+```python
+from cim100 import ACLineSegment, Terminal, Substation, PhaseCode
+from cim100.serialization import read_cimxml, to_cimxml_string, write_cimxml
+
+sub = Substation(name="Zone Sub", mrid="sub-1")
+line = ACLineSegment(name="L1", length=12.5, mrid="line-1", equipment_container=sub)
+Terminal(mrid="t-1", sequence_number=1, phases=PhaseCode.ABC, conducting_equipment=line)
+
+print(to_cimxml_string([sub]))             # the roots plus everything reachable (include_reachable=True)
+write_cimxml([sub], "network.xml", header={"description": "demo", "version": "1"})
+
+doc = read_cimxml("network.xml")           # CimDocument: .objects .by_id .header .warnings .dangling
+line2 = doc.by_id["line-1"]                # keyed by mRID
+assert line2.length == 12.5 and line2.terminals[0].phases is PhaseCode.ABC
+assert line2.equipment_container is doc.by_id["sub-1"]
+```
+
+- Elements are `<cim:ACLineSegment rdf:ID="_<mrid>">`, properties `<cim:Declaring.cimName>` (the CIM
+  name of the class that declares them), references `rdf:resource="#_<mrid>"`, enums
+  `rdf:resource="<ns>EnumName.literal"`, compounds nested with `rdf:parseType="Resource"`.
+- Each association is written once, from its single-valued end (`Terminal.ConductingEquipment`); for
+  1:1 and N:M from the end whose `<Owner>.<Role>` sorts first. `write_both_ends=True` writes both.
+- Objects without an mRID (for example `PositionPoint`) get `rdf:ID="_gen<N>"`; they are read back
+  without an mRID.
+- The reader accepts `rdf:ID`, `rdf:about="#_x"` and `urn:uuid:x`, associations on either or both
+  ends, and collects unknown classes/properties, bad literals and dangling references in
+  `doc.warnings` / `doc.dangling` (`strict=True` raises `CimXmlError` instead).
+- Output is deterministic (sorted by CIM class name, then id) and pretty-printed UTF-8.
+- The full rules (ids, naming, value encoding, duplicate CIM class names) are in the docstring of
+  `cim100/serialization/_common.py`.
 
 ## Naming
 
