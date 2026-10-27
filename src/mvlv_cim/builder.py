@@ -1108,7 +1108,7 @@ class _Builder:
                     high_step=1,
                     neutral_step=0,
                     normal_step=1,
-                    step=1,
+                    step=1.0,
                     neutral_u=None if kv is None else kv * 1000,
                     ltc_flag=False,
                     control_enabled=False,
