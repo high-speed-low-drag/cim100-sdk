@@ -8,6 +8,7 @@ from codegen.normalize import (
     NormalizeError,
     load_snapshot,
     normalize,
+    pluralize,
     singularize,
     snake,
 )
@@ -59,6 +60,8 @@ def end(c, cim_role):
         ("EnergyConsumerPhase", "energy_consumer_phase"),
         ("DER Function", "der_function"),
         ("subjectMRID", "subject_mrid"),
+        ("DesignLocationCUs", "design_location_cus"),
+        ("CUs", "cus"),
     ],
 )
 def test_snake(src, out):
@@ -71,6 +74,41 @@ def test_singularize():
     assert singularize("addresses") == "address"
     assert singularize("terminals") == "terminal"
     assert singularize("class") == "class"
+
+
+@pytest.mark.parametrize(
+    ("src", "out"),
+    [
+        ("time_series", "time_series"),
+        ("switch_status", "switch_status"),
+        ("proprietary_parameter_dynamics", "proprietary_parameter_dynamics"),
+        ("terminals", "terminal"),
+        ("bushings", "bushing"),
+        ("addresses", "address"),
+        ("boundaries", "boundary"),
+        ("design_location_cus", "design_location_cu"),
+        ("species", "species"),
+        ("analysis", "analysis"),
+    ],
+)
+def test_singularize_cases(src, out):
+    assert singularize(src) == out
+
+
+@pytest.mark.parametrize(
+    ("src", "out"),
+    [
+        ("network_boundary", "network_boundaries"),
+        ("terminal", "terminals"),
+        ("key", "keys"),
+        ("address", "addresses"),
+        ("box", "boxes"),
+        ("batch", "batches"),
+        ("component2", "component2s"),
+    ],
+)
+def test_pluralize(src, out):
+    assert pluralize(src) == out
 
 
 def test_module_path(rm):
@@ -128,9 +166,71 @@ def test_literals(rm):
 def test_literal_sanitizing(rm):
     uom = next(e for e in rm.enums if e.cim_name == "UOMType")
     d = {lit.cim_value: lit.py_name for lit in uom.literals}
-    assert d["US$"] == "US_"
+    assert d["US$"] == "US_dollar"
     y = next(e for e in rm.enums if e.cim_name == "IECStandardEditionKind")
-    assert {lit.cim_value: lit.py_name for lit in y.literals}["1963"] == "_1963"
+    assert {lit.cim_value: lit.py_name for lit in y.literals}["1963"] == "v1963"
+
+
+def test_literal_rule():
+    from codegen.normalize import literal_ident
+
+    assert literal_ident("01") == "v01"
+    assert literal_ident("_00_2005_") == "v00_2005"
+    assert literal_ident("and") == "and_"
+    assert literal_ident("US$") == "US_dollar"
+    assert literal_ident("%") == "percent"
+    assert literal_ident("") == "v"
+
+
+def test_enums_constructible(rm):
+    import enum
+
+    for e in rm.enums:
+        m = enum.Enum(e.py_name, [(lit.py_name, lit.cim_value) for lit in e.literals])
+        assert len(m.__members__) == len(e.literals), e.cim_name
+
+
+def test_no_leading_underscore(rm):
+    assert all(not lit.py_name.startswith("_") for e in rm.enums for lit in e.literals)
+    names = [x.py_name for x in (*rm.classes, *rm.enums)]
+    names += [a.py_name for c in rm.classes for a in c.attributes]
+    names += [e.py_name for c in rm.classes for e in c.ends]
+    assert all(not n.startswith("_") for n in names)
+
+
+def test_mrid_methods_only_with_mrid(rm, classes):
+    def has_mrid(c):
+        return any(a.py_name == "mrid" for k in (c, *(classes[g] for g in c.ancestors)) for a in k.attributes)
+
+    n = 0
+    for c in rm.classes:
+        for e in c.ends:
+            got = any(m.endswith("_by_mrid") for m in e.methods)
+            assert got == (e.many and has_mrid(classes[e.target_guid])), (c.cim_name, e.py_name)
+            n += got
+    assert n > 0
+
+
+def test_defaults_evaluate(rm):
+    from datetime import date, datetime, time
+    from decimal import Decimal
+
+    ns = {e.py_name: __import__("enum").Enum(e.py_name, [(l.py_name, l.cim_value) for l in e.literals])
+          for e in rm.enums if e.is_canonical}
+    ns.update(Decimal=Decimal, datetime=datetime, date=date, time=time)
+    n = 0
+    for c in rm.classes:
+        for a in c.attributes:
+            if a.default is not None:
+                eval(a.default, {"__builtins__": {}}, ns)
+                n += 1
+    assert n > 0
+
+
+def test_facility_kind_incompatible(rm):
+    bad = [(c.cim_name, a.cim_name) for c in rm.classes for a in c.attributes
+           if a.overrides and not a.override_compatible]
+    assert bad == [("Facility", "kind")]
 
 
 def _member_names(c, classes):
@@ -184,8 +284,10 @@ def test_generated_roles(rm):
     for e in gen:
         assert e.cim_role is None
         base = (e.renamed_from or e.py_name)
-        assert base.startswith(snake(tgt[e.target_guid].py_name))
+        stem = snake(tgt[e.target_guid].py_name)
+        assert base.startswith(stem.removesuffix("y"))
         assert base.endswith("s") == e.many or not e.many
+    assert any(e.py_name == "network_boundaries" for e in gen)
     assert any(e.many and (e.renamed_from or e.py_name).endswith("s") for e in gen)
 
 

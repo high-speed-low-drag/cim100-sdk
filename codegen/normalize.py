@@ -57,6 +57,7 @@ class NormalizeError(Exception):
 _RE_NONWORD = re.compile(r"[^A-Za-z0-9]+")
 _RE_LOWER_UPPER = re.compile(r"([a-z0-9])([A-Z])")
 _RE_ACRONYM = re.compile(r"([A-Z]+)([A-Z][a-z])")
+_RE_ACRONYM_PLURAL = re.compile(r"([A-Z]{2,})s(?![a-z])")
 _RE_MRID = re.compile(r"(?<![A-Za-z])mRID(?![a-z])|(?<=[a-z])MRID(?![a-z])")
 
 
@@ -67,10 +68,12 @@ def snake(name: str) -> str:
     (``bPerSection`` -> ``b_per_section``); an acronym followed by a capitalised
     word splits before that word (``ACLineSegment`` -> ``ac_line_segment``);
     digits stay attached to the preceding letters (``r0``, ``iec61970_cim_version``).
-    ``mRID`` is special-cased to ``mrid``. All-caps names collapse (``HVDC`` -> ``hvdc``).
+    an all-caps acronym plus a word-final lowercase ``s`` stays together
+    (``DesignLocationCUs`` -> ``design_location_cus``); ``mRID`` is special-cased to ``mrid``. All-caps names collapse (``HVDC`` -> ``hvdc``).
     """
     s = _RE_MRID.sub("Mrid", name)
     s = _RE_NONWORD.sub("_", s)
+    s = _RE_ACRONYM_PLURAL.sub(r"\1S", s)  # CUs -> CUS: stays one word
     s = _RE_ACRONYM.sub(r"\1_\2", s)
     s = _RE_LOWER_UPPER.sub(r"\1_\2", s)
     s = re.sub(r"_+", "_", s).strip("_")
@@ -78,13 +81,14 @@ def snake(name: str) -> str:
 
 
 def sanitize_ident(name: str) -> str:
-    """Make `name` a valid identifier: invalid chars -> `_`, leading digit prefixed `_`,
-    keyword -> trailing `_`. Case is preserved."""
-    if name.isidentifier() and not keyword.iskeyword(name):
+    """Make `name` a valid identifier: invalid chars -> `_`, leading `_` stripped,
+    leading digit (or empty) prefixed `v`, keyword -> trailing `_`. Case is preserved.
+    Never returns a name starting with `_`."""
+    if name.isidentifier() and not keyword.iskeyword(name) and not name.startswith("_"):
         return name
-    s = re.sub(r"[^0-9A-Za-z_]", "_", name)
+    s = re.sub(r"[^0-9A-Za-z_]", "_", name).lstrip("_")
     if not s or s[0].isdigit():
-        s = "_" + s
+        s = "v" + s
     if keyword.iskeyword(s):
         s += "_"
     return s
@@ -94,7 +98,14 @@ def escape_keyword(name: str) -> str:
     return name + "_" if keyword.iskeyword(name) else name
 
 
+_NO_SINGULAR = frozenset({"series", "species", "data", "dynamics", "status", "news", "analysis"})
+_NO_SINGULAR_SUFFIX = ("us", "ss", "is", "ics")
+
+
 def singularize(name: str) -> str:
+    last = name.rsplit("_", 1)[-1]
+    if last != "cus" and (last in _NO_SINGULAR or last.endswith(_NO_SINGULAR_SUFFIX)):  # cus: CUs
+        return name
     if name.endswith("ies") and len(name) > 3:
         return name[:-3] + "y"
     if name.endswith("sses"):
@@ -102,6 +113,33 @@ def singularize(name: str) -> str:
     if name.endswith("s") and not name.endswith("ss"):
         return name[:-1]
     return name
+
+
+def pluralize(name: str) -> str:
+    """Plural for generated role names (``network_boundary`` -> ``network_boundaries``)."""
+    if len(name) > 1 and name.endswith("y") and name[-2] not in "aeiou_0123456789":
+        return name[:-1] + "ies"
+    if name.endswith(("s", "x", "z", "ch", "sh")):
+        return name + "es"
+    return name + "s"
+
+
+_LITERAL_SYMBOLS = {"%": "percent", "$": "dollar", "+": "plus", "#": "hash", "&": "and", "\u00b0": "deg"}
+_RE_PLAIN_LITERAL = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*")
+
+
+def literal_ident(value: str) -> str:
+    """py_name for an enumeration literal (before collision de-duplication)."""
+    if _RE_PLAIN_LITERAL.fullmatch(value) and not keyword.iskeyword(value):
+        return value
+    s = "".join(f"_{_LITERAL_SYMBOLS[ch]}_" if ch in _LITERAL_SYMBOLS else ch for ch in value)
+    s = re.sub(r"[^0-9A-Za-z_]", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s or s[0].isdigit():
+        s = "v" + s
+    if keyword.iskeyword(s):
+        s += "_"
+    return s
 
 
 # --------------------------------------------------------------------------
@@ -126,6 +164,9 @@ class RAttribute:
     notes: str
     overrides: str | None = None  # guid of the ancestor class whose attribute is re-declared
     rename_reason: str | None = None  # set when py_name differs from snake(cim_name)
+    # False when an override re-declares the ancestor attribute with a different, non-narrowing
+    # type; the generator treats it as a redeclared annotation.
+    override_compatible: bool = True
 
 
 @dataclass(frozen=True)
@@ -200,6 +241,7 @@ class Report:
     sanitized_literals: tuple[tuple, ...] = ()  # (enum name, enum guid, ((cim, py), ...))
     primitive_fallbacks: tuple[tuple, ...] = ()  # (primitive name, guid)
     default_unparsed: tuple[tuple, ...] = ()  # (class name, attr name, default)
+    incompatible_overrides: tuple[tuple, ...] = ()  # (class name, attr name, py_type, ancestor name)
     counts: tuple[tuple[str, int], ...] = ()
 
 
@@ -308,27 +350,17 @@ def _resolve_classes(model: Model):
 
 
 def _resolve_literals(c: Classifier) -> tuple[RLiteral, ...]:
-    names: dict[int, str] = {}
     taken: set[str] = set()
-    # pass 1: literals that are valid identifiers as-is keep their spelling
-    for i, lit in enumerate(c.literals):
-        if lit.name.isidentifier() and not keyword.iskeyword(lit.name):
-            names[i] = lit.name
-            taken.add(lit.name)
-    # pass 2: the rest are sanitized, then de-duplicated with _2, _3 ...
-    for i, lit in enumerate(c.literals):
-        if i in names:
-            continue
-        cand = sanitize_ident(lit.name)
+    out: list[RLiteral] = []
+    for lit in c.literals:  # model order; the first claimant keeps the plain name
+        cand = literal_ident(lit.name)
         final, n = cand, 2
         while final in taken:
             final = f"{cand}_{n}"
             n += 1
-        names[i] = final
         taken.add(final)
-    return tuple(
-        RLiteral(l.guid, l.name, names[i], l.value, l.notes) for i, l in enumerate(c.literals)
-    )
+        out.append(RLiteral(lit.guid, lit.name, final, lit.value, lit.notes))
+    return tuple(out)
 
 
 # --------------------------------------------------------------------------
@@ -394,8 +426,9 @@ class _End:
     rename_reason: str | None = None
 
 
-def _methods(py_name: str, item: str) -> tuple[str, ...]:
-    return (f"add_{item}", f"remove_{item}", f"clear_{py_name}", f"num_{item}", f"get_{item}_by_mrid")
+def _methods(py_name: str, item: str, by_mrid: bool = True) -> tuple[str, ...]:
+    m = (f"add_{item}", f"remove_{item}", f"clear_{py_name}", f"num_{item}")
+    return m + (f"get_{item}_by_mrid",) if by_mrid else m
 
 
 def normalize(model: Model) -> ResolvedModel:
@@ -477,6 +510,12 @@ def normalize(model: Model) -> ResolvedModel:
         return tuple(out)
 
     ancestors = {c.guid: ancestors_of(c) for c in model.classifiers}
+    has_mrid = {
+        c.guid: any(
+            snake(a.name) == "mrid" for k in (c.guid, *ancestors[c.guid]) for a in cls[k].attributes
+        )
+        for c in model.classifiers
+    }
 
     # ----- association ends, grouped by owner, deterministic order -----
     ends_by_owner: dict[str, list[_End]] = {}
@@ -493,7 +532,7 @@ def normalize(model: Model) -> ResolvedModel:
             if e.role is None:
                 base = snake(py_name[e.target])
                 if many:
-                    base += "s"
+                    base = pluralize(base)
                 generated = True
             else:
                 base = snake(e.role)
@@ -576,12 +615,18 @@ def normalize(model: Model) -> ResolvedModel:
             is_static = a.is_static or (
                 c.kind == "cimdatatype" and a.name in ("unit", "multiplier") and default is not None
             )
+            compatible = True
+            if overrides is not None:
+                anc = next((x for x in res_attrs[overrides] if x.py_name == name), None)
+                if anc is not None and anc.py_type != ptype:
+                    compatible = tk in ("enumeration", "compound") and anc.type_kind == tk
             attrs.append(
                 RAttribute(
                     guid=a.guid, cim_name=a.name, py_name=name, type_kind=tk, type_guid=t.guid,
                     py_type=ptype, value_py_type=vtype, lower=a.lower, upper=a.upper,
                     default=default, is_static=is_static, deprecated=a.deprecated, notes=a.notes,
                     overrides=overrides, rename_reason=reason,
+                    override_compatible=compatible,
                 )
             )
 
@@ -606,7 +651,7 @@ def normalize(model: Model) -> ResolvedModel:
                 used_items = {x.item_name for x in ends if x.item_name and x is not e}
                 if not item or item in space or item in used_items or item in own_names:
                     item = name
-                names = [name] + (list(_methods(name, item)) if e.many else [])
+                names = [name] + (list(_methods(name, item, has_mrid[e.target])) if e.many else [])
                 bad = [
                     n for n in names
                     if n in space or n in RESERVED_NAMES or n.startswith("_") or n in own_names
@@ -624,7 +669,7 @@ def normalize(model: Model) -> ResolvedModel:
                 continue
             name, item, why = chosen
             e.py_name, e.item_name = name, item
-            e.methods = _methods(name, item) if e.many else ()
+            e.methods = _methods(name, item, has_mrid[e.target]) if e.many else ()
             if why:
                 e.renamed_from, e.rename_reason = e.base, why
                 member_renames.append((c.name, c.guid, "end", e.cim_role or "(generated)", name, why))
@@ -687,6 +732,10 @@ def normalize(model: Model) -> ResolvedModel:
         rows = tuple((l.cim_value, l.py_name) for l in en.literals if l.cim_value != l.py_name)
         if rows:
             sanitized_lits.append((en.cim_name, en.guid, rows))
+    incompatible = tuple(sorted(
+        (c.cim_name, a.cim_name, a.py_type, cls[a.overrides].name)
+        for c in classes for a in c.attributes if a.overrides and not a.override_compatible
+    ))
     n_assoc_ends = sum(len(c.ends) for c in classes)
     counts = (
         ("classifiers", len(model.classifiers)),
@@ -710,6 +759,7 @@ def normalize(model: Model) -> ResolvedModel:
         ("class_names_sanitized", len(class_sanitized)),
         ("primitive_fallbacks", len(fallbacks)),
         ("defaults_unparsed", len(default_unparsed)),
+        ("incompatible_overrides", len(incompatible)),
     )
     report = Report(
         duplicate_classes=tuple(dup_rows),
@@ -719,6 +769,7 @@ def normalize(model: Model) -> ResolvedModel:
         sanitized_literals=tuple(sanitized_lits),
         primitive_fallbacks=tuple(sorted(fallbacks)),
         default_unparsed=tuple(sorted(default_unparsed)),
+        incompatible_overrides=incompatible,
         counts=counts,
     )
     return ResolvedModel(classes=tuple(classes), enums=tuple(enum_list), report=report)

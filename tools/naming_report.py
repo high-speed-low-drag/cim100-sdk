@@ -41,7 +41,7 @@ def render() -> str:
         L.append(f"| {cn} | {kind} | {cim} | `{py}` | {why} |")
 
     L += ["", f"## Generated role names ({len(rep.generated_roles)} ends)", "",
-          "Associations with no role name; role = snake(target class), plus `s` when many.", "",
+          "Associations with no role name; role = snake(target class), pluralized when many.", "",
           "| Owner class | Association GUID | py_name |", "|---|---|---|"]
     for cn, _g, ag, py in rep.generated_roles:
         L.append(f"| {cn} | `{ag}` | `{py}` |")
@@ -52,11 +52,21 @@ def render() -> str:
         ex = ", ".join(f"`{c}` -> `{p}`" for c, p in rows[:4])
         L.append(f"| {en} | {len(rows)} | {ex.replace('|', '/')} |")
 
+    L += ["", "## Incompatible attribute overrides (redeclared annotation)", ""]
+    L += [f"- {c}.{a}: `{t}` overrides an attribute of `{anc}` with an unrelated type"
+          for c, a, t, anc in rep.incompatible_overrides] or ["(none)"]
+
     L += ["", "## Primitive fallbacks (mapped to `str`)", ""]
     L += [f"- {n} (`{g}`)" for n, g in rep.primitive_fallbacks] or ["(none)"]
 
     L += ["", "## Attribute defaults not converted (default = None)", ""]
     L += [f"- {c}.{a} = `{d}`" for c, a, d in rep.default_unparsed] or ["(none)"]
+    L += ["", "## Known oddities", "",
+          ("- Many-ends with singular role names keep `item_name == py_name` (712 ends after the"
+           " singularization exceptions, 649 before; e.g. `asset`); the generated `add_asset` etc."
+           " then share the attribute name."),
+          "- Collision renames append the inverse role or target class, e.g. `customer_customer`.",
+          "- The `Mass.unit 'g'` default is dropped (listed above) because `UnitSymbol` has no `g`."]
     return "\n".join(L) + "\n"
 
 

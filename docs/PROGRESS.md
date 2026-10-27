@@ -47,3 +47,10 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
     - Don't rely on `navigable`.
     - `0..0` would be rejected; the model has none.
 - M3 orchestrator smoke test: 2 of the 405 enums fail on `enum.Enum` because their literal names are reserved `_sunder_` names: ASTMStandardEditionKind `_00_2005_` and UKMinistryofDefenceStandardKind `_05_50__Part_65_`. A fix is needed before M5; it is pending a review agent.
+- M3 review (sonnet): FAIL (narrow).
+  - Blocker: 26 `_sunder_` enum literals in 2 enums. Normalization rules are all clean.
+  - Medium: `get_*_by_mrid` is generated for targets that have no mrid; bad singular names (`time_sery`, `sv_statu`).
+  - Low: `network_boundarys`; Facility.kind overrides AssetKind with str.
+  - Fix agent launched with decided rules: literals get no leading `_` and a `v` prefix for leading digits; an exceptions list for singular names; `pluralize()`; by_mrid only for mrid targets.
+  - Note for M5: attributes named `date`, `time`, `open`, `max` and `sum` shadow imports/builtins, so emit qualified `datetime.date` annotations under `from __future__ import annotations`.
+- M3 fix applied: literal names (no leading `_`, `v` prefix), singularize exceptions, `pluralize()`, mrid methods only for mrid targets, `RAttribute.override_compatible` (Facility.kind is the only incompatible override).
