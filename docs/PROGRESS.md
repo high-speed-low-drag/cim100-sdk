@@ -3,6 +3,12 @@
 This file is the source of truth for resuming work after an interruption (usage limit, crash, new session).
 Update it and commit it at the end of every milestone, and whenever a milestone is paused partway through.
 
+## Status
+- The SDK is complete for in-memory use: all 1,947 CIM100 classifiers are generated with navigable two-way associations.
+- 200 tests pass (`uv run pytest -q`); ruff is clean; `tools/regen.py --check` is clean.
+- mypy (`uv run --with mypy mypy src/cim100`, 2,062 files, ~14 s, 320 MB): 0 errors before and after M6b; nothing needed fixing. mypy is not a project dependency.
+- Later: CIMXML/RDF I/O; network container/services; API docs; `.eap`/CSV reader backend.
+
 ## Resume procedure
 1. `cd ~/claude_code/cim100-sdk && git status && git log --oneline -15`
 2. Read this file and `docs/PLAN.md`.
@@ -35,7 +41,7 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 | M3 | Normalize | done (reviewed, fixes applied) | 27fcbe3, e5c7a21 |
 | M4 | Runtime | done (reviewed PASS WITH NITS, fixes applied) | 95bdfad, befc4e8 |
 | M5 | Generator + generated package (committed) | done | f350458, f85278b, bfad248 |
-| M6 | Generated package + tests | todo | |
+| M6 | Generated package + tests, mypy, README usage | done | 411e3bc, de7bbcb, 2a563d0, M6b (this commit; see git log) |
 
 ## Review notes
 - M2 review (sonnet, independent; PASS WITH NITS):
