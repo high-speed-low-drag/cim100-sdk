@@ -37,8 +37,10 @@ class Issue:
     source_id: str | None = None
 
     def __str__(self) -> str:
-        where = f"{self.sheet}[{self.source_id}]" if self.sheet else ""
-        return f"{self.code}: {where} {self.message}".replace("  ", " ")
+        where = self.sheet or ""
+        if self.source_id is not None:
+            where += f"[{self.source_id}]"
+        return f"{self.code}: {where}: {self.message}" if where else f"{self.code}: {self.message}"
 
 
 @dataclass(frozen=True)
