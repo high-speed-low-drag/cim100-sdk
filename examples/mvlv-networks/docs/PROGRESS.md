@@ -72,3 +72,8 @@
 - All four networks round-trip in CIMXML and JSON-LD, the two read graphs are equal, exports are byte-identical, 0 warnings, 0 dangling. See `docs/EXPORT_REPORT.md`.
 - One builder fix found by the round trip: `RatioTapChanger.step` of fixed taps is now a float (was int, read back as float).
 - Tests: `tests/test_export.py`; N1 and N2 need `MVLV_FULL=1`. `MVLV_FULL=1 uv run pytest -q`: 53 pass. SDK not changed.
+
+## C6 (Phase 3, branch `claude/cgmes-profile-support-1be5ef`)
+
+- `cgmes.py` (`prepare`, `export_cgmes`, `cgmes_view`), `mvlv-cim export --format cgmes|all [--zip] [--gl]`, `verify --cgmes`, `scripts/pypowsybl_smoke.py`, `tests/test_cgmes.py`.
+- `validate_profile` against EQ, SSH, TP: 0 errors for all four networks (and with GL); `read_cgmes` equals the CGMES view; byte-identical re-export. Placeholders (p = q = 0 etc.) and everything CGMES cannot carry are in `docs/EXPORT_REPORT.md`.

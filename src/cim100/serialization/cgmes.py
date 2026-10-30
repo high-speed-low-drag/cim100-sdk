@@ -673,6 +673,7 @@ def write_cgmes(
         raise ValueError(f"file_name {file_name!r} gives the same name to several profiles")
     target = Path(out)
     if target.suffix.lower() == ".zip":
+        target.parent.mkdir(parents=True, exist_ok=True)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for kw, data in docs.items():

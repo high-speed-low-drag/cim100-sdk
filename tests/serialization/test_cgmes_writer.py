@@ -297,6 +297,8 @@ def test_write_directory_and_zip(
     with zipfile.ZipFile(tmp_path / "set.zip") as zf:
         assert sorted(zf.namelist()) == sorted(f"20260101T1230Z_1D_BE_{kw}_001.xml" for kw in KWS)
         assert zf.read(rep.files["SV"]).decode("utf-8") == docs["SV"]
+    write_cgmes(objs, tmp_path / "new" / "dir" / "set.zip", header=HEADER)  # parents are created
+    assert (tmp_path / "new" / "dir" / "set.zip").is_file()
 
 
 def test_dropped_values_are_reported(net: dict[str, c.CimObject]) -> None:

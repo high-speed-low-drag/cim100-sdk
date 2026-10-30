@@ -1,7 +1,8 @@
-# Export report (S4)
+# Export report (S4, C6)
 
 Generated from a real run of `mvlv-cim verify --all` (all four networks, both formats). The
-generated files are in `out/` (gitignored, not committed).
+generated files are in `out/` (gitignored, not committed). The CGMES 3.0 export (C6) has its own
+section below.
 
 ## Result
 
@@ -103,6 +104,132 @@ uv run mvlv-cim summary               # counts by class
 uv run pytest -q                      # N3 and N4 round trip
 MVLV_FULL=1 uv run pytest -q          # also N1 and N2 (about 2 min)
 ```
+
+## CGMES 3.0 export (C6)
+
+`mvlv-cim export --format cgmes [--zip] [--gl]` writes one CGMES 3.0 file set per network with
+`cim100.serialization.write_cgmes`: EQ, SSH and TP (and GL with `--gl`), `out/<workbook>_CGMES/` or
+`out/<workbook>_CGMES.zip`. No SV file: the data has no state values (voltages, flows, tap
+positions solved by a power flow), so there is no principled content for it. Numbers below are from
+`mvlv-cim verify --all --cgmes` and `scripts/pypowsybl_smoke.py` (macOS, one run).
+
+### Result
+
+`mvlv_cim.cgmes.prepare(net)` turns the plain graph into a CGMES-valid one (list below), then
+`validate_profile` against EQ, SSH and TP gives **0 errors for all four networks** (also with GL).
+The files read back (`read_cgmes`) to exactly the CGMES view of the graph (`cgmes_view`: the objects
+whose class a selected profile defines, their attributes and ends that a profile lists, and the links
+between them), with 0 reader warnings and 0 dangling references, and a second export is byte for byte
+identical (model ids are `uuid5`, times come from `--created` or the source file's mtime).
+
+| Network | EQ (MB) | SSH (MB) | TP (MB) | zip (MB) | Objects in the files | validate_profile errors | warnings | Not carried | Write (s) | Read (s) | Round trip | Deterministic |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| Network_1_Rural_SMR8 | 21.5 | 3.5 | 5.0 | 3.9 | 41634 | 0 | 17862 | 35592 | 2.4 | 2.5 | yes | yes |
+| Network_2_Rural_KLO14 | 22.4 | 3.6 | 5.2 | 4.1 | 43439 | 0 | 17851 | 35890 | 2.4 | 2.7 | yes | yes |
+| Network_3_Urban_HPK11 | 2.9 | 0.5 | 0.7 | 0.5 | 5888 | 0 | 2190 | 4710 | 0.4 | 0.3 | yes | yes |
+| Network_4_Urban_CRE21 | 3.4 | 0.6 | 0.8 | 0.6 | 6798 | 0 | 2673 | 5524 | 0.4 | 0.3 | yes | yes |
+
+"Objects in the files" are the objects of the prepared graph (59364, 61478, 8408 and 9649 in all)
+that EQ, SSH or TP define. "Warnings" are `validate_profile` warnings, one per value the profiles do
+not list (next section), and "Not carried" is the writer's `CgmesReport.dropped` (the same facts,
+counted per object or value); both are information, not defects. With `--gl` the files grow by
+0.8 to 6.3 MB (GL), the not-carried count falls to 2112, 2527, 17580 and 17052, and the errors stay 0.
+
+### What `prepare` adds or changes (all in place, on a fresh build)
+
+The plain build and its tests are unchanged: `prepare` is a separate step that `export --format
+cgmes` and `verify --cgmes` run on a second build.
+
+| Need | What is done |
+|---|---|
+| Containers | CGMES 3.0 has no `Feeder`. One `Line` named after the feeder takes the feeder's `ConnectivityNode`s and equipment (lines, capacitors, in-line transformers). |
+| Transformer sites | `PowerTransformer` terminals must sit on nodes in a `VoltageLevel` of the transformer's `Substation` (pypowsybl otherwise: "Transformer must be within a substation"). Each distribution transformer gets a VoltageLevel `<substation> 22 kV` for its MV node, which moves from the Line into it; each in-line (isolating, regulating) transformer gets a new `Substation` `<name> site` with a VoltageLevel per end (N1: 12, N2: 10). Two transformers on one MV node (N1: BUSH_PEA_10, GREY_BOX_2) cannot both own it, so the later one keeps its terminal in the first one's substation (reported in `Prepared.notes`). |
+| Line values | `ACLineSegment.r, x, bch, gch` (required by EQ) = the linecode's per-length value times the line length (from the source, nothing assumed). `r0, x0, b0ch, g0ch` are ShortCircuit profile data (see below). |
+| Limits | `OperationalLimitSet.Terminal` is required, so the existing set is tied to terminal 1 and a copy (same value, new mRID) to terminal 2: 2 sets and 2 `CurrentLimit`s per line. `OperationalLimitType.kind = patl` (the name of the type). |
+| TopologicalNodes | One per `ConnectivityNode`, 1:1 (N1 4329, N2 4533, N3 639, N4 723); `Terminal.TopologicalNode` set; `BaseVoltage` from the equipment at the node, container = the node's container. The data has no `Switch`, so merging TopologicalNodes across closed switches would give the same result. |
+| SSH, from the data | `Terminal.connected = true` (already), `Equipment.inService = true` (the data has no out-of-service state), `RatioTapChanger.step`, `LinearShuntCompensator.sections` (source values). |
+| SSH, **placeholders** | **The data has no load, injection or dispatch values.** `EquivalentInjection.p = q = 0` (704 / 700 / 44 / 79 of them) and `ExternalNetworkInjection.p = q = 0`, `minP = maxP = minQ = maxQ = 0`, `governorSCD = 0`, `controlEnabled = false` are placeholders required by the profile. They say nothing about the real network (load flows of these files carry no load, and the infeed has no reactive range). `ExternalNetworkInjection.referencePriority = 1` because it is the only infeed. The `md:Model.description` of every file says so. |
+| Units | The builder stores SI base units, CGMES fixes kV, MW, MVAr, MVA and km (ohm, siemens, ampere, percent unchanged). `prepare` divides every `Voltage` (V to kV), `ActivePower`, `ReactivePower`, `ApparentPower` (to M) and `Length` (m to km) value. Without it a consumer reads 22000 kV: pypowsybl rejected the voltage setpoint as implausible until this was done. |
+| GL only | The GL profile allows one `PowerSystemResource` per `Location`, the builder shares a transformer site's location between substation, transformer and injection. Each extra resource gets a copy of the Location and its PositionPoint (N3 +90, N4 +160, N1 +1410, N2 +1402). |
+
+Not changed: names, descriptions, phases, ratings, tap data, mRIDs.
+
+### Header
+
+Every file: `modelingAuthoritySet` = `urn:x-mvlv-cim:authority:ausnet-mv-lv-networks`; `created` and
+`scenarioTime` = `--created`, else the source file's mtime; `version` 1; `md:Model.profile` the
+CGMES 3.0 profile URI; `DependentOn` EQ <- SSH <- TP (the ENTSO-E sample chain); a `uuid5` model id per
+network and profile; `description` with the source repository, the workbook, BSD-3-Clause and
+"(c) 2024 Team Nando", and the note that load and dispatch values are placeholders.
+
+### What CGMES cannot carry
+
+Counts are `CgmesReport.dropped` per network (objects or values). The profiles EQ, SSH and TP have no
+place for them; the CIMXML and JSON-LD exports keep all of it.
+
+| Data | CIM100 | N1 | N2 | N3 | N4 | Why / where it could go |
+|---|---|---:|---:|---:|---:|---|
+| Coordinates | `Location`, `PositionPoint`, `CoordinateSystem` (`PowerSystemResource.Location`) | 4330 / 7941 / 1 / 5740 | 4537 / 8361 / 1 / 5939 | 638 / 1231 / 1 / 728 | 729 / 1378 / 1 / 889 | GL profile (`--gl`): carried, with the copies above. A local `urn:x-local:anonymised-xy` CRS is still a CRS URN, but GIS tools will not place it. |
+| Per-phase line data | `ACLineSegmentPhase` (single-phase SWER sections) | 1059 | 565 | 0 | 0 | No class in any CGMES 3.0 profile. The phase survives as `Terminal.phases = A`; the per-phase sequence number is lost. |
+| Per-length impedance | `PerLengthSequenceImpedance`, `ACLineSegment.PerLengthImpedance` | 67 / 3611 | 36 / 3824 | 10 / 593 | 13 / 649 | CGMES has totals only (used: `r, x, bch, gch`). The linecode name and description (cable type, material, size, ampacities) are lost. |
+| Zero-sequence line data | `r0, x0, b0ch, g0ch` of the linecode | all | all | all | all | ShortCircuit profile (SC); not written because SC requires data the source does not have (`shortCircuitEndTemperature`, `PowerTransformer.isPartOfGeneratorUnit`, ...). Never copied onto the line, so also lost from the EQ view. |
+| Source impedance | `ExternalNetworkInjection.maxInitialSymShCCurrent`, `maxR1ToX1Ratio`, `maxR0ToX0Ratio`, `maxZ0ToZ1Ratio`, `voltageFactor` | 1 each | 1 each | 1 each | 1 each | SC profile only. |
+| Names | `Name`, `NameType` (`source_element_id`), `IdentifiedObject.Names` | 4330 / 1 | 4537 / 1 | 638 / 1 | 728 / 1 | CGMES has `IdentifiedObject.name` only. The workbook `Element_ID` is lost; rebuild it from the mRID (`uuid5`, see `ids.py`) or the CIMXML export. |
+| Feeder | `Feeder`, `Substation.NormalEnergizingFeeder` / `NormalEnergizedFeeder`, `Terminal.NormalHeadFeeder` | 1 + 705 + 1 | 1 + 701 + 1 | 1 + 45 + 1 | 1 + 80 + 1 | Replaced by the `Line` container (name kept); the normal head terminal is lost. |
+| Transformer vector data | `PowerTransformer.vectorGroup`, `PowerTransformerEnd.phaseAngleClock`, `TransformerEnd.grounded` | 717 / 1434 / 258 | 711 / 1422 / 144 | 45 / 90 / 45 | 80 / 160 / 81 | SC profile. `connectionKind` is carried (EQ), but not whether a wye is grounded or the clock number. |
+| Shunt phase connection | `ShuntCompensator.phaseConnection` | 2 | 2 | 0 | 0 | Not in the EQ/SSH profiles (`grounded` is). |
+
+The writer lists exactly these in `CgmesReport.dropped`, and `verify --cgmes` reports
+`n_warnings` (the `validate_profile` warnings) next to them.
+
+### Remaining `validate_profile` warnings
+
+Every warning is "property X is set but no selected profile lists it". They are the list above,
+per object: `ACLineSegment.PerLengthImpedance`, `IdentifiedObject.Names` and
+`PowerSystemResource.Location` on lines, transformers, substations and injections,
+`PowerTransformer.vectorGroup`, `PowerTransformerEnd.phaseAngleClock`, `TransformerEnd.grounded`,
+`Substation.NormalEnergizingFeeder`, the five source-impedance attributes, `Terminal.NormalHeadFeeder`,
+`ShuntCompensator.phaseConnection` and `ACLineSegment.ACLineSegmentPhases`. Nothing else is
+reported. Objects of classes outside the profiles (Feeder, Name, ...) are not validated; they are
+not written (`CgmesReport.dropped`).
+
+### pypowsybl
+
+pypowsybl 1.16.1 in a throwaway environment (`uv run --no-project --with pypowsybl python
+scripts/pypowsybl_smoke.py <zip>`; not a project dependency) loads all four zip files without
+warnings, with these element counts (loads: 0, there are none):
+
+| Network | Substations | Voltage levels | Buses | Lines | 2-winding transformers | Generators | Shunts | Ratio tap changers | Operational limits |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Network_1_Rural_SMR8 | 715 | 4329 | 3576 | 3611 | 717 | 705 | 2 | 542 | 7222 |
+| Network_2_Rural_KLO14 | 711 | 4533 | 4456 | 3824 | 711 | 701 | 2 | 502 | 7648 |
+| Network_3_Urban_HPK11 | 45 | 639 | 631 | 593 | 45 | 45 | 0 | 0 | 1186 |
+| Network_4_Urban_CRE21 | 80 | 723 | 699 | 649 | 80 | 80 | 0 | 0 | 1298 |
+
+(Equivalent and external network injections become generators; the line limits appear on both
+sides.) With `--gl` the same counts for N3 and N4.
+
+AC load flow, a smoke test only because there is no load: the script gives the infeed a voltage
+setpoint (the export does not, and its zero reactive range would make OpenLoadFlow ignore it).
+**N3 and N4 converge in one iteration**, voltages 1.000 to 1.001 pu (line charging only).
+**N1 and N2 do not converge** (Newton-Raphson, 16 iterations), also with DC initialisation. The
+cause was not found. Tested in pypowsybl, each without effect: disconnecting the capacitors, the
+isolating and regulating transformers, all distribution transformers (leaving only the zone
+transformer and the lines), the equivalent-injection generators, long lines, and raising the lines
+with impedance below 1 mOhm. powsybl leaves 751 line ends of N1 (dead ends) unconnected to a bus
+although every `Terminal.connected` is true. Do not read the N1/N2 result as a data error; it is
+unexplained.
+
+### Reproduce
+
+```
+uv run mvlv-cim export --all --format cgmes --out out           # directories
+uv run mvlv-cim export -n 3 --format cgmes --zip --gl --out out  # one zip, with GL
+uv run mvlv-cim verify --all --cgmes [--gl]                      # validate, round trip, determinism
+uv run --no-project --with pypowsybl python scripts/pypowsybl_smoke.py out/Network_3_Urban_HPK11_CGMES.zip
+```
+
+Tests: `tests/test_cgmes.py` (N3, N4 by default; N1, N2 with `MVLV_FULL=1`).
 
 ## Sample from Network_3_Urban_HPK11
 

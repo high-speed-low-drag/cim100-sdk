@@ -2,7 +2,8 @@
 
 Builds CIM100 models of four real Australian MV distribution networks with the generated
 [`cim100-sdk`](../cim100-sdk). Package `mvlv_cim` reads the workbooks and returns an in-memory
-object graph. `mvlv-cim` exports it as CIMXML and JSON-LD and checks the round trip (see Export).
+object graph. `mvlv-cim` exports it as CIMXML, JSON-LD and CGMES 3.0 and checks the round trip
+(see Export and CGMES export).
 
 | Workbook | Type | Feeder | Lines | Dist. transformers | ISO | REG | In-line | Caps |
 |---|---|---|---:|---:|---:|---:|---:|---:|
@@ -40,7 +41,8 @@ net.issues  # data problems found and handled (Issue(code, message, sheet, sourc
 net.validate()  # validate() messages without the known instance_set quirk
 ```
 
-Modules: `excel.py` (typed row loading), `builder.py`, `phases.py`, `ids.py` (mRIDs).
+Modules: `excel.py` (typed row loading), `builder.py`, `phases.py`, `ids.py` (mRIDs), `export.py`,
+`verify.py`, `cgmes.py` (CGMES step), `cli.py`.
 
 ## Export
 
@@ -61,6 +63,32 @@ modelingAuthoritySet, the source repo URL and the BSD-3-Clause licence. Output i
 the two read graphs with each other, and two exports byte for byte. All four networks pass; sizes,
 times and sample objects are in [docs/EXPORT_REPORT.md](docs/EXPORT_REPORT.md). Tests:
 `tests/test_export.py` (N3, N4 by default; `MVLV_FULL=1` adds N1, N2).
+
+## CGMES export
+
+```
+uv run mvlv-cim export --all --format cgmes [--zip] [--gl] [--out out/] [--created ...]
+uv run mvlv-cim verify --all --cgmes [--gl]
+```
+
+Writes per network `out/<workbook>_CGMES/` (or `.zip`) with a CGMES 3.0 file set: `_EQ.xml`,
+`_SSH.xml`, `_TP.xml` (`--gl` adds `_GL.xml` with the coordinates), via
+`cim100.serialization.write_cgmes`. There is no SV file (the data has no state values). Headers
+have the same authority set, licence and source text as the other exports; model ids and times are
+deterministic. The plain build is not CGMES: `mvlv_cim.cgmes.prepare(net)` adds what the profiles
+require (Line container instead of Feeder, one TopologicalNode per ConnectivityNode, transformer
+substations, line totals, limit terminals, SSH values, kV/MW/km units). Result: `validate_profile`
+reports 0 errors for all four networks, `read_cgmes` returns the CGMES view of the graph, and
+pypowsybl loads the files.
+
+**There are no load or injection values in the source data.** `EquivalentInjection` and
+`ExternalNetworkInjection` `p`, `q` and the injection limits are 0 placeholders. CGMES also has no
+place for `ACLineSegmentPhase`, per-length impedance, Names, Feeder, vector group and the
+zero-sequence and source short-circuit data (coordinates only with `--gl`). The counts, the full
+list of changes and the pypowsybl result are in the CGMES section of
+[docs/EXPORT_REPORT.md](docs/EXPORT_REPORT.md). `scripts/pypowsybl_smoke.py` loads a file set into
+pypowsybl (run it with `uv run --no-project --with pypowsybl`; pypowsybl is not a dependency).
+Tests: `tests/test_cgmes.py`.
 
 ## Containers
 
