@@ -123,7 +123,7 @@ if no agent is running any more, check `git log` and the working tree for its WI
 | C5 | CGMES reader + samples | done | 035ab91 |
 | R2 | Review C3–C5 | done | f30ffbc |
 | C6 | MV example + README | done | d239b7f |
-| F | Final checks + report | todo | |
+| F | Final checks + report | done | (this commit) |
 
 - C1 (5c866cf): `profile-source.toml`, `codegen/profile_source.py`, `tools/fetch_profiles.py`, `codegen/owl_reader.py` (OWL conventions in its docstring), `tools/dump_profiles.py [--check]`, snapshot `src/cim100/profiles/data/cgmes_3_0.json` (~290 KB, ships in the wheel). 30 new tests in `tests/profiles/` (292 passed in all).
   - Snapshot schema (documented in `tools/dump_profiles.py`): `profiles[keyword]` = keyword, name, file, uri, version, base, comment, orphan_properties, classes. Class = ns, super (profile superclass), concrete, enumeration, stereotypes, literals (null = all CIM literals), min_instances, properties. Property (keyed `Class.prop`, under the class that owns it, i.e. the side written in CIMXML) = ns, kind (attribute/association/null), min, max (null = CIM multiplicity), range (`cim:`/`eu:`/`xsd:`/`cim15:` prefixed), range_kind (datatype/enumeration/compound/class), targets (in-profile classes), stereotypes.
