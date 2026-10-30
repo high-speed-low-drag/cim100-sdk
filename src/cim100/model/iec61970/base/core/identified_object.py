@@ -29,14 +29,18 @@ class IdentifiedObject(CimObject):
         "_targeting_cim_data_object",
         "alias_name",
         "description",
+        "energy_ident_code_eic",
         "mrid",
         "name",
+        "short_name",
     )
 
     alias_name: str | None
     description: str | None
     mrid: str | None
     name: str | None
+    energy_ident_code_eic: str | None
+    short_name: str | None
 
     diagram_objects: Many[DiagramObject] = Many(
         EndMeta(
@@ -108,6 +112,16 @@ class IdentifiedObject(CimObject):
             AttrMeta("description", "description", "str", 0, 1, "primitive"),
             AttrMeta("mrid", "mRID", "str", 0, 1, "primitive"),
             AttrMeta("name", "name", "str", 0, 1, "primitive"),
+            AttrMeta(
+                "energy_ident_code_eic",
+                "energyIdentCodeEic",
+                "str",
+                0,
+                1,
+                "primitive",
+                namespace="eu",
+            ),
+            AttrMeta("short_name", "shortName", "str", 0, 1, "primitive", namespace="eu"),
         ),
         ends=(
             diagram_objects.meta,
@@ -125,6 +139,8 @@ class IdentifiedObject(CimObject):
         description: str | None = None,
         mrid: str | None = None,
         name: str | None = None,
+        energy_ident_code_eic: str | None = None,
+        short_name: str | None = None,
         diagram_objects: Iterable[DiagramObject] | None = None,
         names: Iterable[Name] | None = None,
         instance_set: InstanceSet | None = None,
@@ -137,6 +153,8 @@ class IdentifiedObject(CimObject):
         self.description = description
         self.mrid = new_mrid() if mrid is None else mrid
         self.name = name
+        self.energy_ident_code_eic = energy_ident_code_eic
+        self.short_name = short_name
         if diagram_objects is not None:
             IdentifiedObject.diagram_objects.extend(self, diagram_objects)
         if names is not None:

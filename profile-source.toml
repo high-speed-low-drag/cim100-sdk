@@ -90,3 +90,13 @@ sha256 = "0097fb000f73049860c82f0505d7fd2ea7e89bb5b2df6e6d5c760c5b08885e1e"
 size = 22446
 uri = "http://iec.ch/TC57/ns/CIM/Topology-EU/3.0"
 version = "3.0.0"
+
+# The CGMES-CIM17 EA model (SQLite .qea: CIM17-2, CGMES 3.1 and NC extensions), same repo and
+# commit. tools/dump_eu_ir.py reads its European extension package
+# EuropeanCIMExtensions/ExtIEC61970/ExtEuBase (ExtIEC61970Version 3.0, the eu: members of the
+# CGMES 3.0 profiles) into codegen/snapshot/eu_ir.json. Never committed; cached in build/profiles/.
+[schema]
+file = "CIM17-2_CGMES31v01_PROF-20v02_NC23v66_MS10v01_DES10v01.qea"
+url = "https://raw.githubusercontent.com/cimug-org/CGMES-CIM17/{commit}/CGMES-CIM17/Schema/{file}"
+sha256 = "549089101e387706d687e95c0cd06d75e6a0265f7a8cfeb6b311d9eed1c2793f"
+size = 50151424

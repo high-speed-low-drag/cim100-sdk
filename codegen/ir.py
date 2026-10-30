@@ -5,6 +5,12 @@ Plain frozen dataclasses with tuples, so an IR value is hashable and immutable.
 classifiers and associations by GUID) and dict keys are emitted in sorted order.
 Member order inside a classifier (attributes, literals) follows the EA `Pos`
 order, which is itself deterministic.
+
+Namespaces: classifiers, attributes and associations carry the RDF namespace prefix of their
+names (`namespace`, default ``"cim"``; the CGMES European extensions use ``"eu"``). An
+extension classifier (`extends` = a CIM class GUID) only carries attributes that `merge` adds
+to that class. Both fields are left out of the JSON when they have their default, so the
+CIM100 snapshot does not spell them out.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ from typing import Any
 
 KINDS = ("class", "enumeration", "cimdatatype", "compound", "primitive")
 ASSOCIATION_TYPES = ("Association", "Aggregation")
+DEFAULT_NAMESPACE = "cim"
 AGGREGATION_KINDS = ("none", "shared", "composite")
 
 
@@ -43,6 +50,7 @@ class Attribute:
     stereotypes: tuple[str, ...] = ()
     deprecated: bool = False
     notes: str = ""
+    namespace: str = DEFAULT_NAMESPACE
 
 
 @dataclass(frozen=True)
@@ -68,6 +76,8 @@ class Classifier:
     attributes: tuple[Attribute, ...] = ()
     literals: tuple[EnumLiteral, ...] = ()
     notes: str = ""
+    namespace: str = DEFAULT_NAMESPACE
+    extends: str | None = None  # extension classifier: GUID of the class it adds attributes to
 
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
@@ -107,6 +117,7 @@ class Association:
     name: str | None = None
     stereotypes: tuple[str, ...] = ()
     notes: str = ""
+    namespace: str = DEFAULT_NAMESPACE  # of both ends
 
     def __post_init__(self) -> None:
         if self.type not in ASSOCIATION_TYPES:
@@ -157,7 +168,14 @@ class Model:
 
     # --- JSON -----------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self.sorted())
+        d = asdict(self.sorted())
+        for c in d["classifiers"]:
+            _drop_defaults(c)
+            for a in c["attributes"]:
+                _drop_defaults(a)
+        for a in d["associations"]:
+            _drop_defaults(a)
+        return d
 
     def to_json(self, indent: int | None = 1) -> str:
         return json.dumps(self.to_dict(), indent=indent, sort_keys=True, ensure_ascii=False) + "\n"
@@ -176,6 +194,81 @@ class Model:
     @classmethod
     def from_json(cls, text: str) -> Model:
         return cls.from_dict(json.loads(text))
+
+
+def _drop_defaults(d: dict[str, Any]) -> None:
+    if d.get("namespace") == DEFAULT_NAMESPACE:
+        del d["namespace"]
+    if "extends" in d and d["extends"] is None:
+        del d["extends"]
+
+
+class MergeError(ValueError):
+    pass
+
+
+def merge(base: Model, ext: Model) -> Model:
+    """`base` plus the extension model `ext` (e.g. the CGMES European extensions).
+
+    Packages, classifiers, associations and versions of `ext` are added; GUIDs, package paths
+    and version keys must be new. An extension classifier (`extends` set) is not added: its
+    attributes are appended to the classifier it extends, keeping their own namespace. Any
+    reference to an extension classifier or to an unknown GUID raises `MergeError`. `stats`
+    stay those of `base`.
+    """
+    errors: list[str] = []
+    classes = {c.guid: c for c in base.classifiers}
+    paths = {p.path for p in base.packages}
+    errors += [f"package {p.path} exists" for p in ext.packages if p.path in paths]
+    errors += [f"version {k} exists" for k in ext.versions if k in base.versions]
+    extensions = {c.guid: c for c in ext.classifiers if c.extends is not None}
+    added = [c for c in ext.classifiers if c.extends is None]
+    for c in added:
+        if c.guid in classes:
+            errors.append(f"classifier {c.name} {c.guid} exists")
+        classes[c.guid] = c
+    extra: dict[str, list[Attribute]] = {}
+    for x in sorted(extensions.values(), key=lambda c: c.guid):
+        if x.extends not in classes or x.extends in extensions:
+            errors.append(f"extension {x.name} extends unknown class {x.extends}")
+            continue
+        if x.superclass is not None or x.literals:
+            errors.append(f"extension {x.name} has a superclass or literals")
+        extra.setdefault(x.extends, []).extend(x.attributes)
+    known = set(classes)
+    for c in added:
+        if c.superclass is not None and c.superclass not in known:
+            errors.append(f"{c.name}: unknown superclass {c.superclass}")
+        for a in c.attributes:
+            if a.type_guid is not None and a.type_guid not in known:
+                errors.append(f"{c.name}.{a.name}: unknown type {a.type_guid}")
+    for g, attrs in extra.items():
+        for a in attrs:
+            if a.type_guid is not None and a.type_guid not in known:
+                errors.append(f"{classes[g].name}.{a.name}: unknown type {a.type_guid}")
+            if any(b.name == a.name for b in classes[g].attributes):
+                errors.append(f"{classes[g].name}.{a.name} exists")
+    assoc_guids = {a.guid for a in base.associations}
+    for assoc in ext.associations:
+        if assoc.guid in assoc_guids:
+            errors.append(f"association {assoc.guid} exists")
+        for e in assoc.ends:
+            if e.owner not in known or e.target not in known:
+                errors.append(f"association {assoc.guid} references an unknown class")
+    if errors:
+        raise MergeError("\n".join(errors))
+    merged = [
+        replace(c, attributes=c.attributes + tuple(extra[c.guid])) if c.guid in extra else c
+        for c in (*base.classifiers, *added)
+    ]
+    return replace(
+        base,
+        versions={**base.versions, **ext.versions},
+        packages=base.packages + ext.packages,
+        classifiers=tuple(merged),
+        associations=base.associations + ext.associations,
+        unresolved_types=base.unresolved_types + ext.unresolved_types,
+    ).sorted()
 
 
 def _build(dc: type, d: dict[str, Any]) -> Any:

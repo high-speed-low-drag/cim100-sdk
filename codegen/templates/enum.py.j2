@@ -23,5 +23,8 @@ class {{ name }}(CimEnum):
 {% if deprecated %}
             deprecated=True,
 {% endif %}
+{% if namespace %}
+            namespace={{ namespace }},
+{% endif %}
         )
     )
