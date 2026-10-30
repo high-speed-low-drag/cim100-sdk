@@ -17,7 +17,7 @@ def uid(name: str) -> str:
 
 
 def build_cgmes() -> dict[str, c.CimObject]:
-    bv = c.BaseVoltage(mrid=uid("bv"), name="110kV", nominal_voltage=110.0)
+    bv = c.BaseVoltage(mrid=uid("bv"), name="110kV", nominal_voltage=110e3)
     gr = c.GeographicalRegion(mrid=uid("gr"), name="Region")
     sgr = c.SubGeographicalRegion(mrid=uid("sgr"), name="Sub region", region=gr)
     sub = c.Substation(mrid=uid("sub"), name="Sub", region=sgr)
@@ -42,17 +42,17 @@ def build_cgmes() -> dict[str, c.CimObject]:
 
     line = c.ACLineSegment(
         mrid=uid("line"), name="Line", short_name="L1", r=1.0, x=10.0, bch=1e-5, gch=0.0,
-        length=10.0, base_voltage=bv, equipment_container=vl, in_service=True,
+        length=10e3, base_voltage=bv, equipment_container=vl, in_service=True,
     )  # fmt: skip
     lt1, lt2 = terminal(line, 1, 0), terminal(line, 2, 1)
     gu = c.ThermalGeneratingUnit(
-        mrid=uid("gu"), name="GU", max_operating_p=200.0, min_operating_p=0.0, normal_pf=1.0,
+        mrid=uid("gu"), name="GU", max_operating_p=200e6, min_operating_p=0.0, normal_pf=1.0,
         in_service=True, equipment_container=sub,
     )  # fmt: skip
     gen = c.SynchronousMachine(
-        mrid=uid("gen"), name="Gen", type=c.SynchronousMachineKind.generator, rated_s=250.0,
-        rated_u=110.0, max_q=100.0, min_q=-100.0, generating_unit=gu, equipment_container=vl,
-        in_service=True, control_enabled=True, p=-50.0, q=-10.0,
+        mrid=uid("gen"), name="Gen", type=c.SynchronousMachineKind.generator, rated_s=250e6,
+        rated_u=110e3, max_q=100e6, min_q=-100e6, generating_unit=gu, equipment_container=vl,
+        in_service=True, control_enabled=True, p=-50e6, q=-10e6,
         operating_mode=c.SynchronousMachineOperatingMode.generator, reference_priority=1,
     )  # fmt: skip
     gt = terminal(gen, 1, 0)
@@ -63,7 +63,7 @@ def build_cgmes() -> dict[str, c.CimObject]:
     )  # fmt: skip
     gen.regulating_control = rc
     load = c.EnergyConsumer(
-        mrid=uid("load"), name="Load", equipment_container=vl, in_service=True, p=50.0, q=10.0
+        mrid=uid("load"), name="Load", equipment_container=vl, in_service=True, p=50e6, q=10e6
     )
     ldt = terminal(load, 1, 1)
     olt = c.OperationalLimitType(
@@ -79,12 +79,12 @@ def build_cgmes() -> dict[str, c.CimObject]:
         mrid=uid("island"), name="Island", topological_nodes=tns, angle_ref_topological_node=tns[0]
     )
     sv = [
-        c.SvVoltage(v=110.0, angle=0.0, topological_node=tns[0]),
-        c.SvVoltage(v=109.5, angle=-0.5, topological_node=tns[1]),
-        c.SvPowerFlow(p=-50.0, q=-10.0, terminal=gt),
-        c.SvPowerFlow(p=50.0, q=10.0, terminal=ldt),
-        c.SvPowerFlow(p=50.0, q=10.0, terminal=lt1),
-        c.SvPowerFlow(p=-50.0, q=-10.0, terminal=lt2),
+        c.SvVoltage(v=110e3, angle=0.0, topological_node=tns[0]),
+        c.SvVoltage(v=109.5e3, angle=-0.5, topological_node=tns[1]),
+        c.SvPowerFlow(p=-50e6, q=-10e6, terminal=gt),
+        c.SvPowerFlow(p=50e6, q=10e6, terminal=ldt),
+        c.SvPowerFlow(p=50e6, q=10e6, terminal=lt1),
+        c.SvPowerFlow(p=-50e6, q=-10e6, terminal=lt2),
     ]
     out: dict[str, c.CimObject] = {
         "bv": bv, "sub": sub, "vl": vl, "line": line, "lt1": lt1, "lt2": lt2, "gen": gen,

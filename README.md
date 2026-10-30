@@ -220,12 +220,12 @@ from cim100 import (
 from cim100.profiles import cgmes3, validate_profile
 from cim100.serialization import CgmesHeader, read_cgmes, write_cgmes
 
-kv = BaseVoltage(name="22 kV", nominal_voltage=22.0)           # CGMES units: kV, MW, MVA, km
+kv = BaseVoltage(name="22 kV", nominal_voltage=22e3)           # SI: V, W, VA, m
 region = SubGeographicalRegion(name="Sub-region", region=GeographicalRegion(name="Region"))
 sub = Substation(name="S1", region=region)
 vl = VoltageLevel(name="22 kV", substation=sub, base_voltage=kv)
 a, b = (ConnectivityNode(name=n, connectivity_node_container=vl) for n in ("A", "B"))
-line = ACLineSegment(name="L1", length=1.2, r=0.3, x=0.4, bch=1e-5, base_voltage=kv,
+line = ACLineSegment(name="L1", length=1200.0, r=0.3, x=0.4, bch=1e-5, base_voltage=kv,
                      equipment_container=vl)
 for i, node in enumerate((a, b), start=1):
     tn = TopologicalNode(name=node.name, base_voltage=kv, connectivity_node_container=vl)
@@ -282,8 +282,13 @@ print(doc.headers["demo_EQ.xml"].modeling_authority_set)  # http://example.org/m
   its ancestor (`<cim:Equipment rdf:about=...>` with `inService`). The module docstring of
   `cim100/serialization/cgmes.py` lists them. The full BE and NL sample sets read and write back
   to the same graph (opt-in test: `CIM100_CGMES_SAMPLES=<dir>` or `CIM100_CGMES_DOWNLOAD=1`).
-- **Units.** CGMES fixes the multipliers (kV, MW, MVAr, MVA, km); the SDK writes the number you
-  set. Convert before writing if you hold SI base units.
+- **Units.** Objects hold SI values (V, W, VAr, VA, m). CGMES fixes a multiplier per datatype
+  (kV, MW, MVAr, MVA, km; ohm, S, A, Hz unchanged), so `write_cgmes` divides by it and
+  `read_cgmes` multiplies: `nominal_voltage=22e3` is written as `22.0` and reads back as
+  `22000.0`. The shift works on the decimal text, so a value survives a write and read exactly.
+  `units="cgmes"` (on both) writes and reads the numbers as they are. The multipliers come from
+  the ENTSO-E RDFS (`profile-source.toml` `[units]`); `cgmes3.profile_set.unit_exponent("Voltage")`
+  is 3.
 - **Known limitations.** Objects of classes without an mRID (`PositionPoint`, `Sv*`, curve points,
   ...) get `_gen<N>` ids: not UUIDs, and not stable through a read and write. `VsConverter.uf` and
   the `Simple_Float` ranges (SV, SSH) of CGMES 3.0 have no counterpart in the model and are dropped

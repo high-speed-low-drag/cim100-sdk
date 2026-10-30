@@ -52,16 +52,12 @@ The README sections "CGMES 3.0 profiles" and "CGMES file sets" cover the details
 
 These are ordered by how much they matter.
 
-1. **Units: decision needed.** CIM100 datatypes have no multiplier, so the SDK stores SI values
-   (V, W, m). CGMES fixes the multipliers to kV, MW, MVA and km. The SDK writer and reader pass
-   values through unchanged. So a user who builds in SI and calls `write_cgmes` gets 22000 "kV".
-   Today only the example converts, in `mvlv_cim.cgmes.prepare`. There are two options:
-   - (a) `write_cgmes` and `read_cgmes` convert automatically from per-datatype CGMES multipliers.
-     These would come from the ENTSO-E RDFS files or the CGMES .qea.
-   - (b) Document that objects for CGMES must hold CGMES units, and have `validate_profile` warn on
-     implausible magnitudes.
-
-   I'd go with (a): it fits "use the classes as part of the profile".
+1. **Units: decided and done (option a).** Objects hold SI values (V, W, m); `write_cgmes`
+   scales to the CGMES multipliers (kV, MW, MVAr, MVA, km) and `read_cgmes` back to SI.
+   `units="cgmes"` turns it off. The multipliers are the `cims:isFixed` values of the ENTSO-E
+   RDFS, pinned in `profile-source.toml` `[units]` and in the snapshot. The shift is done on the
+   decimal text, so values survive a write and read exactly. The MV-LV example no longer
+   converts by itself.
 2. **N1 and N2 don't converge in pypowsybl.** These are the rural feeders with SWER and two-phase
    sections. They import, and their DC load flow converges, but the AC load flow does not. Likely
    causes:
@@ -102,5 +98,5 @@ These are ordered by how much they matter.
 
 ## Suggested next steps
 
-Decide on item 1 (units). Then look into the N1/N2 convergence, switch to stable UUIDv5 ids for
+Look into the N1/N2 convergence, switch to stable UUIDv5 ids for
 mRID-less classes, and push the branch and open a PR when you're happy.

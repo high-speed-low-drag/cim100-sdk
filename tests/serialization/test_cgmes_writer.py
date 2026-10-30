@@ -314,7 +314,7 @@ def test_dropped_values_are_reported(net: dict[str, c.CimObject]) -> None:
 
 def test_class_outside_profiles_is_not_written(tmp_path: Path) -> None:
     feeder = c.Feeder(mrid=uid("feeder"), name="F")
-    bv = c.BaseVoltage(mrid=uid("bv2"), name="BV", nominal_voltage=11.0)
+    bv = c.BaseVoltage(mrid=uid("bv2"), name="BV", nominal_voltage=11e3)
     with pytest.warns(UserWarning):
         rep = write_cgmes([feeder, bv], tmp_path, header=HEADER)
     assert [str(i.message) for i in rep.dropped] == [
@@ -339,7 +339,7 @@ def test_validation_errors_warn(tmp_path: Path) -> None:
 
 def test_reference_outside_written_set() -> None:
     # a boundary node defined in another model is referenced by its mrid
-    bv = c.BaseVoltage(mrid=uid("bv3"), name="BV", nominal_voltage=11.0)
+    bv = c.BaseVoltage(mrid=uid("bv3"), name="BV", nominal_voltage=11e3)
     vl = c.VoltageLevel(mrid=uid("vl3"), name="VL", base_voltage=bv)
     docs = to_cgmes_strings([vl], profiles=("EQ",), header=HEADER, include_reachable=False,
                             validate=False)  # fmt: skip
@@ -502,3 +502,27 @@ def test_file_names_must_differ(net: dict[str, c.CimObject], tmp_path: Path) -> 
     with pytest.raises(ValueError, match="same name"):
         write_cgmes(list(net.values()), tmp_path, header=HEADER, file_name="{name}.xml")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_units_are_scaled_to_cgmes(roots: dict[str, ET.Element]) -> None:
+    # SI in the objects; kV, MW, MVAr, MVA and km in the files; ohm, S and A unchanged
+    eq, ssh, sv = roots["EQ"], roots["SSH"], roots["SV"]
+    assert _find(eq, uid("bv")).findtext(f"{CIM}BaseVoltage.nominalVoltage") == "110.0"
+    line = _find(eq, uid("line"))
+    assert line.findtext(f"{CIM}Conductor.length") == "10.0"
+    assert line.findtext(f"{CIM}ACLineSegment.r") == "1.0"
+    gen = _find(eq, uid("gen"))
+    assert gen.findtext(f"{CIM}RotatingMachine.ratedS") == "250.0"
+    assert gen.findtext(f"{CIM}SynchronousMachine.minQ") == "-100.0"
+    assert _find(eq, uid("lim")).findtext(f"{CIM}CurrentLimit.normalValue") == "500.0"
+    assert _find(ssh, uid("load")).findtext(f"{CIM}EnergyConsumer.q") == "10.0"
+    assert {e.text for e in sv.iter(f"{CIM}SvVoltage.v")} == {"110.0", "109.5"}
+
+
+def test_units_cgmes_writes_values_as_held() -> None:
+    bv = c.BaseVoltage(mrid=uid("bv4"), name="BV", nominal_voltage=22.0)
+    docs = to_cgmes_strings([bv], profiles=("EQ",), header=HEADER, units="cgmes")
+    text = _find(ET.fromstring(docs["EQ"]), uid("bv4")).findtext(f"{CIM}BaseVoltage.nominalVoltage")
+    assert text == "22.0"
+    with pytest.raises(ValueError, match="units must be one of"):
+        to_cgmes_strings([bv], profiles=("EQ",), header=HEADER, units="kV")

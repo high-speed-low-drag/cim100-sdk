@@ -23,6 +23,8 @@ Conventions
   multiplicity of the member (None = unbounded, also for a gap property without a profile max).
 * Enum literals are CIM spellings (``CimEnum.value``). ``None`` in `PropertyInfo.literals`
   means the profile does not restrict them.
+* Units: the SDK holds SI values (V, W, m). A profile set can fix a unit multiplier per datatype
+  (CGMES: kV, MW, MVAr, MVA, km); `ProfileSet.unit_exponent` gives its power of ten.
 """
 
 from __future__ import annotations
@@ -41,6 +43,12 @@ if TYPE_CHECKING:
     from cim100.profiles._validate import ProfileIssue
 
 KEYWORD_ORDER = ("EQ", "SSH", "TP", "SV", "DL", "GL", "OP", "SC", "EQBD", "DY")
+# IEC 61970-301 UnitMultiplier literals -> power of ten
+MULTIPLIER_EXPONENTS = {
+    "y": -24, "z": -21, "a": -18, "f": -15, "p": -12, "n": -9, "micro": -6, "m": -3, "c": -2,
+    "d": -1, "none": 0, "da": 1, "h": 2, "k": 3, "M": 6, "G": 9, "T": 12, "P": 15, "E": 18,
+    "Z": 21, "Y": 24,
+}  # fmt: skip
 
 
 def _common() -> Any:
@@ -339,6 +347,8 @@ class ProfileSet:
     profiles: tuple[Profile, ...]
     namespaces: dict[str, str] = field(repr=False)
     source: dict[str, str] = field(repr=False)
+    # fixed unit per datatype: {"Voltage": ("k", "V")}; unit None when the profile fixes none
+    units: dict[str, tuple[str, str | None]] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_snapshot(cls, data: dict[str, Any], name: str) -> ProfileSet:
@@ -361,7 +371,8 @@ class ProfileSet:
                 p.keyword,
             )
         )
-        return cls(name, tuple(profs), dict(data["namespaces"]), dict(data["source"]))
+        units = {k: (v["multiplier"], v.get("unit")) for k, v in data.get("units", {}).items()}
+        return cls(name, tuple(profs), dict(data["namespaces"]), dict(data["source"]), units)
 
     @classmethod
     def load(cls, resource: str, name: str) -> ProfileSet:
@@ -410,6 +421,13 @@ class ProfileSet:
             raise KeyError(
                 f"no profile {keyword!r} in {self.name} ({', '.join(self.keywords)})"
             ) from None
+
+    def unit_exponent(self, datatype: str) -> int:
+        """Power of ten of the multiplier the profiles fix for `datatype` (a CIM datatype name:
+        3 for ``Voltage``, kV in CGMES; 6 for ``ActivePower``, MW). 0 when the profiles fix none
+        or the datatype is not listed: the value is then written as held."""
+        unit = self.units.get(datatype)
+        return 0 if unit is None else MULTIPLIER_EXPONENTS[unit[0]]
 
     def by_uri(self, uri: str) -> Profile:
         """The profile with this ``md:Model.profile`` / ``dcterms:conformsTo`` URI."""

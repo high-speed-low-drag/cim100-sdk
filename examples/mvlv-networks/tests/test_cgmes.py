@@ -138,24 +138,36 @@ def test_feeder_becomes_a_line_container(n3):
     assert len(line.equipments) == 593 and len(line.connectivity_nodes) == 593 - 44
 
 
-def test_units_are_cgmes_units(n3):
+def test_units_si_in_graph_cgmes_in_files(n3):
+    # the graph keeps the builder's SI values; write_cgmes scales them to kV, MVA and km
     objs = n3.prepared.objects
     assert sorted(b.nominal_voltage for b in objs if isinstance(b, BaseVoltage)) == [
-        0.24,
-        0.433,
-        12.7,
-        22.0,
-        66.0,
+        240.0,
+        433.0,
+        12700.0,
+        22000.0,
+        66000.0,
     ]
     plain = build_network(workbook(3).path)
     plain_by_mrid = {o.mrid: o for o in plain.objects if isinstance(o, ACLineSegment)}
     for seg in (o for o in objs if isinstance(o, ACLineSegment)):
         src = plain_by_mrid[seg.mrid]
         length_m, pli = src.length, src.per_length_impedance
-        assert seg.length == pytest.approx(length_m / 1000)
-        assert seg.r == pytest.approx(pli.r * length_m)  # ohm: unchanged unit
+        assert seg.length == length_m
+        assert seg.r == pytest.approx(pli.r * length_m)  # ohm
         assert seg.bch == pytest.approx(pli.bch * length_m)
-    for end in (o for o in objs if isinstance(o, PowerTransformerEnd)):
+    raw = read_cgmes(n3.target, units="cgmes").objects  # the numbers as written
+    assert sorted(b.nominal_voltage for b in raw if isinstance(b, BaseVoltage)) == [
+        0.24,
+        0.433,
+        12.7,
+        22.0,
+        66.0,
+    ]
+    by_mrid = {o.mrid: o for o in objs if isinstance(o, ACLineSegment)}
+    for seg in (o for o in raw if isinstance(o, ACLineSegment)):
+        assert seg.length == pytest.approx(by_mrid[seg.mrid].length / 1000)  # km
+    for end in (o for o in raw if isinstance(o, PowerTransformerEnd)):
         assert end.rated_u in (66.0, 22.9, 22.0, 12.7, 0.433, 0.24)  # kV
         assert 0 < end.rated_s <= 100  # MVA
 

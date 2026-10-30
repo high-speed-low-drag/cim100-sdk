@@ -22,10 +22,9 @@ Choices (also documented in docs/EXPORT_REPORT.md):
   ``governorSCD`` of the source are 0 as well. They are placeholders required by the profile and
   say nothing about the real network. ``ExternalNetworkInjection.referencePriority`` is 1: it is
   the only infeed of the model.
-* **Units.** CIM100 datatypes carry the unit symbol only, and the builder uses SI base units
-  (V, W, VA, m). CGMES fixes the multipliers: kV, MW, MVAr, MVA and km (ohm, siemens, ampere,
-  percent stay). ``prepare`` converts every such value in place, last, so the graph is in CGMES
-  units afterwards. Without it a consumer reads 22000 kV.
+* **Units.** The graph stays in SI base units (V, W, VA, m), as the builder makes it.
+  ``write_cgmes`` scales to the CGMES multipliers (kV, MW, MVAr, MVA, km) in the files and
+  ``read_cgmes`` back to SI.
 * **Limits.** ``OperationalLimitSet.Terminal`` is required, so each line's limit set is tied to
   terminal 1 and a copy (same value, new mRID) to terminal 2. ``OperationalLimitType.kind`` is
   ``patl``, the name of the type in the builder.
@@ -113,7 +112,6 @@ def prepare(net: BuiltNetwork, *, geographic: bool = False) -> Prepared:
     _limits(prep)
     _topological_nodes(prep)
     _ssh_values(prep)
-    _cgmes_units(prep)
     if geographic:
         _split_locations(prep)
     del objs
@@ -332,36 +330,6 @@ def _ssh_values(prep: Prepared) -> None:
     for comp in _by_class(prep.objects, cim100.LinearShuntCompensator):
         if comp.control_enabled is None:
             _set(prep, comp, "control_enabled", False)
-
-
-#: Divisor per datatype whose SI base unit the builder stores (CIM datatype -> factor to CGMES).
-#: Dividing (not multiplying by 1e-3) keeps 12700 V as exactly 12.7 kV.
-UNIT_DIVISORS = {
-    "Voltage": 1e3,  # V -> kV
-    "ActivePower": 1e6,  # W -> MW
-    "ReactivePower": 1e6,  # VAr -> MVAr
-    "ApparentPower": 1e6,  # VA -> MVA
-    "Length": 1e3,  # m -> km
-}
-
-
-def _cgmes_units(prep: Prepared) -> None:
-    """Scale values of the datatypes in :data:`UNIT_DIVISORS` from SI base units to CGMES units.
-    Runs last: per-length impedances times lengths are computed in ohm and metres first."""
-    plans: dict[type, list[tuple[str, float]]] = {}
-    for obj in prep.objects:
-        cls = type(obj)
-        if cls not in plans:
-            plans[cls] = [
-                (a.name, UNIT_DIVISORS[a.meta.py_type])
-                for a in class_plan(cls).attrs
-                if a.meta.py_type in UNIT_DIVISORS
-            ]
-        for name, divisor in plans[cls]:
-            v = getattr(obj, name, None)
-            if v is not None:
-                setattr(obj, name, v / divisor)
-                prep.set_values[f"{cls.__name__}.{name} (/{divisor:g})"] += 1
 
 
 # --------------------------------------------------------------------------------------

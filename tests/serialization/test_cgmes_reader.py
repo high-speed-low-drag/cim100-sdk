@@ -162,7 +162,7 @@ def test_microgrid_excerpt() -> None:
     assert line.b0ch is not None  # ShortCircuit property in the EQ file
     # SSH-only descriptions: created once, as the class seen, with a warning
     sm = doc.by_id["550ebe0d-f2b2-48c1-991f-cebea43a21aa"]
-    assert type(sm) is c.SynchronousMachine and sm.in_service is True and sm.p == -118.0
+    assert type(sm) is c.SynchronousMachine and sm.in_service is True and sm.p == -118e6  # MW -> W
     eqp = doc.by_id["5caf27ed-d2f8-458a-834a-6b3193a982e6"]
     assert type(eqp) is c.Equipment and eqp.in_service is True
     assert any("only described" in w and "Equipment" in w for w in doc.warnings)
@@ -687,3 +687,26 @@ def test_empty_source_warns(tmp_path: Path) -> None:
     assert doc.objects == [] and doc.warnings == ["no XML files found in the source"]
     with pytest.raises(CgmesReadError, match="no XML files"):
         read_cgmes([], strict=True)
+
+
+def test_units_round_trip_without_float_noise() -> None:
+    # 1.1 * 1000 is 1100.0000000000002 in float; the decimal shift keeps 1100.0 and 1.1
+    bv = c.BaseVoltage(mrid=uid("bv5"), name="BV", nominal_voltage=1100.0)
+    line = c.ACLineSegment(
+        mrid=uid("line5"), name="L", r=0.1, x=0.3, bch=0.0, length=2.3e3, base_voltage=bv
+    )
+    docs = to_cgmes_strings([bv, line], profiles=("EQ",), header=HEADER)
+    assert ">1.1<" in docs["EQ"] and ">2.3<" in docs["EQ"]
+    doc = read_cgmes(docs)
+    bv2, line2 = doc.by_id[uid("bv5")], doc.by_id[uid("line5")]
+    assert bv2.nominal_voltage == 1100.0 and line2.length == 2300.0 and line2.r == 0.1
+    # ``units="cgmes"`` keeps the numbers of the file
+    raw = read_cgmes(docs, units="cgmes")
+    assert raw.by_id[uid("bv5")].nominal_voltage == 1.1
+    assert raw.by_id[uid("line5")].length == 2.3
+    assert to_cgmes_strings([bv, line], profiles=("EQ",), header=HEADER) == docs
+    # a value with float noise keeps every digit in the file and reads back as the same float
+    line.length = 0.033605 * 1000  # 33.605000000000004
+    docs = to_cgmes_strings([bv, line], profiles=("EQ",), header=HEADER)
+    assert ">0.033605000000000004<" in docs["EQ"]
+    assert read_cgmes(docs).by_id[uid("line5")].length == line.length

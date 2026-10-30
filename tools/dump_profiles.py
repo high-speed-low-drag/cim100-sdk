@@ -6,6 +6,7 @@ Usage: dump_profiles.py [--out PATH] [--check]
 Snapshot schema (keys sorted; URIs compacted to `prefix:Local` with the `namespaces` table):
   source: {repo, commit, license}
   namespaces: {prefix: namespace URI}
+  units: {datatype: {multiplier, unit}}   (profile-source.toml [units]; unit absent for Money)
   profiles: {keyword: {keyword, name, file, uri, version, base, comment,
                        orphan_properties: ["cim:Class.prop", ...],
                        classes: {CIM name: class}}}
@@ -96,6 +97,7 @@ def build_snapshot(config: dict, paths: dict[str, Path]) -> dict:
     return {
         "source": {k: config[k] for k in ("repo", "commit", "license")},
         "namespaces": NAMESPACES,
+        "units": {k: dict(v) for k, v in config.get("units", {}).items()},
         "profiles": {
             e["keyword"]: profile_entry(e, read_owl(paths[e["keyword"]]))
             for e in config["profiles"]

@@ -67,6 +67,16 @@ Associations
     generic writer's rule for e.g. SV ``TopologicalIsland.TopologicalNodes``. A reference may
     point at an object outside the written set (e.g. a boundary ConnectivityNode) when that
     object has an mrid.
+Units
+    The SDK holds SI values (V, W, VAr, VA, m). CGMES fixes a multiplier per datatype (kV, MW,
+    MVAr, MVA, km; `ProfileSet.unit_exponent`), so with ``units="si"`` (the default) the writer
+    divides and the reader multiplies by it. The shift is done on the decimal text
+    (`_scaled_text`, `_CgmesReader._value`), so it is exact both ways: ``220.1`` kV reads as
+    ``220100.0`` V and writes back as ``220.1``, and a value with float noise such as
+    ``33.605000000000004`` m is written as ``0.033605000000000004`` km and reads back as the
+    same float. ``units="cgmes"`` writes
+    and reads the numbers as they are, for objects that already hold CGMES units. Compound
+    attributes are not scaled (no CGMES compound has a scaled datatype).
 Enumerations
     ``rdf:resource="<namespace><Enum>.<literal>"``; ``eu`` enums (``LimitKind``) use the ``eu``
     URI. File names default to ``<name>_<KEYWORD>.xml``; the ENTSO-E convention
@@ -114,6 +124,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 
 from cim100._runtime import CimCompound, CimObject
@@ -187,6 +198,36 @@ _DEPENDS: dict[str, tuple[tuple[str, ...], ...]] = {
 }
 
 _ROOT_NS = (("cim", CIM_NS), ("md", MD_NS), ("rdf", RDF_NS), ("eu", EU_NS))
+_UNITS = ("si", "cgmes")
+
+
+def _check_units(units: str) -> bool:
+    """True when values are to be scaled (``units="si"``)."""
+    if units not in _UNITS:
+        raise ValueError(f"units must be one of {_UNITS}, not {units!r}")
+    return units == "si"
+
+
+def _exponent(spec: AttrSpec | None, pset: ProfileSet) -> int:
+    """Power of ten between the SDK value of `spec` and its CGMES value (0: as held)."""
+    if spec is None or spec.kind != "cimdatatype":
+        return 0
+    return pset.unit_exponent(spec.type_name)
+
+
+def _scaled_text(value: Any, exponent: int) -> str | None:
+    """Text of `value` times ``10**exponent``, shifted in decimal, or None for a value that is
+    not a finite number. The shortest float text when it is exact (``110.0``), else every digit
+    of the shift (``0.033605000000000004``), so the reader's shift gives back the same float."""
+    if isinstance(value, bool) or not isinstance(value, int | float | Decimal):
+        return None
+    d = (value if isinstance(value, Decimal) else Decimal(repr(value))).scaleb(exponent)
+    if not d.is_finite():
+        return None
+    if isinstance(value, Decimal):
+        return str(d)
+    f = float(d)
+    return repr(f) if Decimal(repr(f)) == d else str(d)
 
 
 class CgmesWriteError(ValueError):
@@ -414,7 +455,9 @@ def _build(
     strict: bool,
     profile_set: ProfileSet | None,
     boundary: Iterable[CimObject] = (),
+    units: str = "si",
 ) -> tuple[dict[str, bytes], CgmesReport]:
+    scale = _check_units(units)
     pset = profile_set if profile_set is not None else _default_set()
     selected = _select(profiles, pset)
     hdr = header or CgmesHeader()
@@ -477,7 +520,12 @@ def _build(
                     if v is None:
                         continue
                     el = ET.Element(info.qname)
-                    _write_value(el, v, CIM_NS, where, info.name)
+                    exp = _exponent(info._spec, pset) if scale else 0
+                    text = _scaled_text(v, -exp) if exp else None
+                    if text is None:
+                        _write_value(el, v, CIM_NS, where, info.name)
+                    else:
+                        el.text = text
                     children.append(el)
                     written_attrs.add((id(obj), name))
             if not plan.defining and not children:
@@ -545,7 +593,9 @@ def _combine_plan(
             continue
         for g in guests:
             if g.keyword in combine or g.keyword in used:
-                raise ValueError(f"combine: {g.keyword!r} is both a host and a guest, or twice a guest")
+                raise ValueError(
+                    f"combine: {g.keyword!r} is both a host and a guest, or twice a guest"
+                )
             used.add(g.keyword)
         if guests:
             out[host] = guests
@@ -628,11 +678,20 @@ def to_cgmes_strings(
     strict: bool = False,
     profile_set: ProfileSet | None = None,
     boundary: Iterable[CimObject] = (),
+    units: str = "si",
 ) -> dict[str, str]:
     """The CGMES documents as ``{keyword: CIMXML string}`` (same content as `write_cgmes`;
     problems are reported by ``warnings.warn``, or raised with ``strict=True``)."""
     docs, _ = _build(
-        objects, profiles, header, include_reachable, validate, strict, profile_set, boundary
+        objects,
+        profiles,
+        header,
+        include_reachable,
+        validate,
+        strict,
+        profile_set,
+        boundary,
+        units,
     )
     return {kw: d.decode("utf-8") for kw, d in docs.items()}
 
@@ -650,6 +709,7 @@ def write_cgmes(
     strict: bool = False,
     profile_set: ProfileSet | None = None,
     boundary: Iterable[CimObject] = (),
+    units: str = "si",
 ) -> CgmesReport:
     """Write `objects` (and, by default, everything reachable) as a CGMES file set.
 
@@ -659,10 +719,20 @@ def write_cgmes(
     (``YYYYMMDDTHHMMZ``). Returns a `CgmesReport` (file names, model ids, headers, validation
     issues, dropped values). `boundary` lists the objects that belong to the equipment boundary
     set (``CgmesDocument.boundary_objects`` of a read): with EQBD selected they are defined there
-    instead of in EQ. See the module docstring for the conventions.
+    instead of in EQ. Values are SI in the objects and scaled to the CGMES multipliers (kV, MW,
+    km, ...) in the files; ``units="cgmes"`` writes them unscaled. See the module docstring for
+    the conventions.
     """
     docs, report = _build(
-        objects, profiles, header, include_reachable, validate, strict, profile_set, boundary
+        objects,
+        profiles,
+        header,
+        include_reachable,
+        validate,
+        strict,
+        profile_set,
+        boundary,
+        units,
     )
     for kw, items in report.headers.items():
         scen = items["scenarioTime"].replace("-", "").replace(":", "")[:13] + "Z"
@@ -912,10 +982,11 @@ def _kws(profiles: Sequence[Profile]) -> str:
 
 
 class _CgmesReader(_Reader):
-    def __init__(self, strict: bool, pset: ProfileSet) -> None:
+    def __init__(self, strict: bool, pset: ProfileSet, scale: bool = True) -> None:
         super().__init__(strict)
         self.error_cls = CgmesReadError
         self.pset = pset
+        self._scale = scale
         self.cdoc = CgmesDocument(profile_set=pset)
         self.doc = self.cdoc
         self._gaps: set[str] = set()
@@ -1087,6 +1158,16 @@ class _CgmesReader(_Reader):
 
     # -- conflicting values ------------------------------------------------------------
 
+    def _value(self, el: ET.Element, spec: AttrSpec, where: str) -> Any:
+        value = super()._value(el, spec, where)
+        exp = _exponent(spec, self.pset) if self._scale else 0
+        if exp == 0 or isinstance(value, bool) or not isinstance(value, int | float | Decimal):
+            return value
+        d = Decimal((el.text or "").strip()).scaleb(exp)  # from the text: exact
+        if not d.is_finite():
+            return value
+        return d if isinstance(value, Decimal) else float(d)
+
     def _set_attr(self, obj: CimObject, spec: AttrSpec, value: Any) -> None:
         old = None if spec.is_id else getattr(obj, spec.name, None)  # mRID: see _check_mrids
         if old is not None and _encoded(old) != _encoded(value):
@@ -1164,7 +1245,11 @@ def _profile_set(profile_set: Any) -> ProfileSet:
 
 
 def read_cgmes(
-    sources: Any, *, strict: bool = False, profile_set: ProfileSet | Any | None = None
+    sources: Any,
+    *,
+    strict: bool = False,
+    profile_set: ProfileSet | Any | None = None,
+    units: str = "si",
 ) -> CgmesDocument:
     """Read a CGMES file set into one merged object graph.
 
@@ -1174,8 +1259,10 @@ def read_cgmes(
     order of the files does not matter. `profile_set` defaults to CGMES 3.0 (`cgmes3`). Problems
     (unknown classes, properties outside the file's profiles, SDK gaps, unknown profile URIs, bad
     literals, dangling references) are collected in ``warnings``; ``strict=True`` raises
-    `CgmesReadError` at the first. Malformed XML always raises.
+    `CgmesReadError` at the first. Malformed XML always raises. Values are scaled from the CGMES
+    multipliers (kV, MW, km, ...) to SI; ``units="cgmes"`` keeps them as written.
     """
+    scale = _check_units(units)
     pset = _profile_set(profile_set)
     files: list[tuple[str, ET.Element]] = []
     for name, data in _gather(sources):
@@ -1183,4 +1270,4 @@ def read_cgmes(
             files.append((name, ET.XML(data)))
         except ET.ParseError as e:
             raise CgmesReadError(f"{name}: not well-formed XML: {e}") from e
-    return _CgmesReader(strict, pset).read_files(files)
+    return _CgmesReader(strict, pset, scale).read_files(files)

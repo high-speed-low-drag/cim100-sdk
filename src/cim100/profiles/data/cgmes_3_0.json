@@ -13247,5 +13247,106 @@
   "commit": "1c7708f5d3bde53e154201707f31961573868cf2",
   "license": "Apache-2.0",
   "repo": "cimug-org/CGMES-CIM17"
+ },
+ "units": {
+  "ActivePower": {
+   "multiplier": "M",
+   "unit": "W"
+  },
+  "ActivePowerPerCurrentFlow": {
+   "multiplier": "M",
+   "unit": "WPerA"
+  },
+  "ActivePowerPerFrequency": {
+   "multiplier": "M",
+   "unit": "WPers"
+  },
+  "AngleDegrees": {
+   "multiplier": "none",
+   "unit": "deg"
+  },
+  "AngleRadians": {
+   "multiplier": "none",
+   "unit": "rad"
+  },
+  "ApparentPower": {
+   "multiplier": "M",
+   "unit": "VA"
+  },
+  "Capacitance": {
+   "multiplier": "none",
+   "unit": "F"
+  },
+  "Conductance": {
+   "multiplier": "none",
+   "unit": "S"
+  },
+  "CurrentFlow": {
+   "multiplier": "none",
+   "unit": "A"
+  },
+  "Frequency": {
+   "multiplier": "none",
+   "unit": "Hz"
+  },
+  "Inductance": {
+   "multiplier": "none",
+   "unit": "H"
+  },
+  "Length": {
+   "multiplier": "k",
+   "unit": "m"
+  },
+  "Money": {
+   "multiplier": "none"
+  },
+  "PU": {
+   "multiplier": "none",
+   "unit": "none"
+  },
+  "PerCent": {
+   "multiplier": "none",
+   "unit": "none"
+  },
+  "Reactance": {
+   "multiplier": "none",
+   "unit": "ohm"
+  },
+  "ReactivePower": {
+   "multiplier": "M",
+   "unit": "VAr"
+  },
+  "RealEnergy": {
+   "multiplier": "M",
+   "unit": "Wh"
+  },
+  "Resistance": {
+   "multiplier": "none",
+   "unit": "ohm"
+  },
+  "RotationSpeed": {
+   "multiplier": "none",
+   "unit": "Hz"
+  },
+  "Seconds": {
+   "multiplier": "none",
+   "unit": "s"
+  },
+  "Susceptance": {
+   "multiplier": "none",
+   "unit": "S"
+  },
+  "Temperature": {
+   "multiplier": "none",
+   "unit": "degC"
+  },
+  "Voltage": {
+   "multiplier": "k",
+   "unit": "V"
+  },
+  "VoltagePerReactivePower": {
+   "multiplier": "none",
+   "unit": "VPerVAr"
+  }
  }
 }

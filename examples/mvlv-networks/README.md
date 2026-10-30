@@ -77,7 +77,8 @@ Writes per network `out/<workbook>_CGMES/` (or `.zip`) with a CGMES 3.0 file set
 have the same authority set, licence and source text as the other exports; model ids and times are
 deterministic. The plain build is not CGMES: `mvlv_cim.cgmes.prepare(net)` adds what the profiles
 require (Line container instead of Feeder, one TopologicalNode per ConnectivityNode, transformer
-substations, line totals, limit terminals, SSH values, kV/MW/km units). Result: `validate_profile`
+substations, line totals, limit terminals, SSH values); the graph stays in SI units and
+`write_cgmes` writes kV/MW/km. Result: `validate_profile`
 reports 0 errors for all four networks, `read_cgmes` returns the CGMES view of the graph, and
 pypowsybl loads the files.
 
