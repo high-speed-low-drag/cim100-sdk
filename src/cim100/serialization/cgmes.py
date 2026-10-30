@@ -99,7 +99,7 @@ Reading (`read_cgmes`)
     ``IdentifiedObject.mRID`` element, else the id without its ``_``. Each file's ``md:FullModel``
     is kept (`CgmesFileHeader`); the profiles named by its ``md:Model.profile`` URIs (unknown URIs
     warn) classify the file's properties: not in the profile, or a known SDK gap
-    (``python_name`` None, e.g. ``VsConverter.uf``), is a warning. A value that differs from one
+    (``python_name`` None), is a warning. A value that differs from one
     set by an earlier file (or element) is a warning too; the later one wins, so the file order
     only matters for such conflicts. Objects defined in an EQBD file are listed in
     ``CgmesDocument.boundary_objects``. Non-strict readers collect
@@ -1022,7 +1022,7 @@ class _CgmesReader(_Reader):
             if p not in profiles:
                 profiles.append(p)
         profiles.sort(key=lambda p: self.pset.profiles.index(p))
-        empty = [p for p in profiles if not p.class_names]  # DY: the OWL source is empty
+        empty = [p for p in profiles if not p.class_names]
         if empty:
             self.warn(
                 f"{name}: profile(s) {_kws(empty)} have no classes in the profile set, "

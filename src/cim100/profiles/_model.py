@@ -15,14 +15,12 @@ Conventions
   written in CIMXML (not always the generic writer's choice, see tests/profiles/test_direction).
   No profile lists both ends of an association.
 * ``IdentifiedObject.mRID`` is a profile attribute like any other (it is the Python ``mrid``).
-* Known gaps: a property the SDK does not have is still listed, with ``python_name`` None:
-  ``VsConverter.uf`` and the stale CIM15 properties of ShortCircuit (namespace ``cim15``).
-  ``Simple_Float.value`` is an orphan restriction and is not listed at all (the snapshot's
-  ``orphan_properties``); the ``Simple_Float`` range of SSH/SV properties stays a plain string.
-* ``min`` is the profile's minCardinality; ``max`` is the profile's maxCardinality, else the SDK
-  multiplicity of the member (None = unbounded, also for a gap property without a profile max).
-* Enum literals are CIM spellings (``CimEnum.value``). ``None`` in `PropertyInfo.literals`
-  means the profile does not restrict them.
+* Gaps: a property the SDK does not have would still be listed, with ``python_name`` None. The
+  CGMES 3.0 snapshot (ENTSO-E vocabularies) has none.
+* ``min`` and ``max`` are the profile's multiplicity (``cims:multiplicity``); an unbounded profile
+  maximum (``n``) falls back to the SDK multiplicity of the member (None = unbounded).
+* Enum literals are CIM spellings (``CimEnum.value``), as the profile lists them. ``None`` in
+  `PropertyInfo.literals` means the profile does not restrict them.
 * Units: the SDK holds SI values (V, W, m). A profile set can fix a unit multiplier per datatype
   (CGMES: kV, MW, MVAr, MVA, km); `ProfileSet.unit_exponent` gives its power of ten.
 """
@@ -68,7 +66,7 @@ class PropertyInfo:
 
     ``name`` is the CIM name ``Declaring.property`` as the profile writes it
     (``ACLineSegment.r``, ``IdentifiedObject.shortName``); ``namespace`` its prefix (``cim`` or
-    ``eu``; ``cim15`` for the stale ShortCircuit members). ``python_name`` is the attribute or end
+    ``eu``). ``python_name`` is the attribute or end
     on the SDK class, None for a known gap. ``owner`` is the profile class that lists the
     property (an ancestor of the class it was asked for when inherited).
     """

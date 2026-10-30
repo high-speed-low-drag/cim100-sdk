@@ -1,11 +1,13 @@
 """`validate_profile`: a valid network is clean and each check fires on a crafted one."""
 
+import json
 import time
+from importlib import resources
 
 import pytest
 
 import cim100 as c
-from cim100.profiles import ProfileIssue, cgmes3, validate_profile
+from cim100.profiles import ProfileIssue, ProfileSet, cgmes3, validate_profile
 from tests.profiles.eq_network import build_eq
 
 
@@ -136,14 +138,25 @@ def test_max_cardinality_exceeded():
     )
 
 
+def _narrowed_op() -> ProfileSet:
+    # the CGMES 3.0 vocabularies list every literal; narrow OP's UnitSymbol to test the check
+    snap = json.loads(
+        resources.files("cim100.profiles").joinpath("data/cgmes_3_0.json").read_text("utf-8")
+    )
+    snap["profiles"]["OP"]["classes"]["UnitSymbol"]["literals"] = ["V", "A", "W"]
+    return ProfileSet.from_snapshot(snap, "narrowed")
+
+
 def test_enum_value_not_allowed():
+    op = _narrowed_op().OP
     an = c.Analog(
         mrid="an", name="an", unit_symbol=c.UnitSymbol.V, unit_multiplier=c.UnitMultiplier.k
     )
-    assert not find(validate_profile([an], cgmes3.OP), prop="Measurement.unitSymbol")
+    assert not find(validate_profile([an], op), prop="Measurement.unitSymbol")
     an.unit_symbol = c.UnitSymbol.kg
-    (e,) = find(validate_profile([an], cgmes3.OP), prop="Measurement.unitSymbol")
+    (e,) = find(validate_profile([an], op), prop="Measurement.unitSymbol")
     assert e.severity == "error" and e.profile == "OP" and "'kg' is not allowed" in e.message
+    assert not find(validate_profile([an], cgmes3.OP), prop="Measurement.unitSymbol")
     # unrestricted in EQ: any literal passes
     ok = c.SynchronousMachineOperatingMode.motor
     sm = c.SynchronousMachine(mrid="sm", name="sm", operating_mode=ok)

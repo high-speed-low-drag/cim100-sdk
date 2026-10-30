@@ -2,9 +2,9 @@
 
 A profile writes an association on the class that owns the property (the snapshot key
 ``Class.Role``); no profile lists both ends. The generic CIMXML/JSON-LD writers pick the written
-end with `association_write_end` (single-valued end first, else the name that sorts first). The two
-agree for 133 of the 142 profile associations; the nine below are written from the other end by
-the generic rule. A profile (CGMES) writer must use the snapshot's owner, not `is_write_end`.
+end with `association_write_end` (single-valued end first, else the name that sorts first). Of the
+233 profile associations, the generic rule picks the other end for the nine below and for 45 of the
+Dynamics profile. A profile (CGMES) writer must use the snapshot's owner, not `is_write_end`.
 """
 
 import json
@@ -52,5 +52,6 @@ def test_profile_association_direction_vs_generic_rule():
                 assert _end_key(spec.desc.inverse) not in owned, f"{kw}: both ends of {pn}"
                 if not spec.writes:
                     different.add((kw, pn))
-    assert total == 142
-    assert different == DIFFERENT_FROM_GENERIC_RULE
+    assert total == 233
+    assert {d for d in different if d[0] != "DY"} == DIFFERENT_FROM_GENERIC_RULE
+    assert sum(d[0] == "DY" for d in different) == 45

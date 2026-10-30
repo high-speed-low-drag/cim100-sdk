@@ -20,7 +20,7 @@ def test_profile_set_and_headers():
     assert cgmes3.EQ.uri == "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"
     assert cgmes3.by_uri(cgmes3.SSH.uri) is cgmes3.SSH
     assert cgmes3.EQ.name == "CoreEquipment" and cgmes3.EQ.version == "3.0.0"
-    assert cgmes3.DY.classes == () and cgmes3.DY.version == "1.0.0"
+    assert len(cgmes3.DY.classes) == 260 and cgmes3.DY.version == "1.0.0"
     with pytest.raises(KeyError, match="NOPE"):
         cgmes3.by_keyword("NOPE")
     with pytest.raises(KeyError):
@@ -37,7 +37,8 @@ def test_classes_resolve_to_sdk_classes():
     assert c.TopologicalNode in cgmes3.TP.classes and not cgmes3.EQ.has_class(c.TopologicalNode)
     assert len(cgmes3.EQ.class_names) == len(cgmes3.EQ.classes) == 180
     assert set(cgmes3.classes) == {k for p in cgmes3.profiles for k in p.classes}
-    assert len(cgmes3.classes) == len(cgmes3.class_names) == 249
+    assert len(cgmes3.classes) == len(cgmes3.class_names) == 490
+    assert cgmes3.DY.is_concrete(c.ExcIEEEST1A) and not cgmes3.EQ.has_class(c.ExcIEEEST1A)
     assert not cgmes3.profile_set.has_class(c.Bid)
 
 
@@ -118,7 +119,7 @@ def test_european_extensions():
     bp = cgmes3.EQ.property(c.BoundaryPoint, "from_end_iso_code")
     assert bp.namespace == "eu" and bp.owner is c.BoundaryPoint
     kind = cgmes3.EQ.property(c.OperationalLimitType, "kind")
-    assert kind.range == "eu:LimitKind" and kind.literals is None
+    assert kind.range == "eu:LimitKind" and kind.literals == cgmes3.EQ.allowed_literals(c.LimitKind)
     assert "patl" in cgmes3.EQ.allowed_literals(c.LimitKind)
 
 
@@ -126,12 +127,13 @@ def test_enum_literals():
     assert cgmes3.SSH.allowed_literals(c.SynchronousMachineOperatingMode) == (
         "generator", "condenser", "motor",
     )  # fmt: skip
-    unrestricted = cgmes3.EQ.allowed_literals(c.UnitSymbol)
-    assert unrestricted == tuple(m.value for m in c.UnitSymbol)
+    # the vocabularies list every literal of the CIM enumeration (none is narrowed)
+    full = tuple(m.value for m in c.UnitSymbol)
+    assert cgmes3.EQ.allowed_literals(c.UnitSymbol) == full
     op = cgmes3.OP.allowed_literals("UnitSymbol")
-    assert "V" in op and "kg" not in op and len(op) < len(unrestricted)
+    assert set(op) == set(full)
     assert cgmes3.OP.property(c.Analog, "unit_symbol").literals == op
-    assert cgmes3.EQ.property(c.Terminal, "phases").literals is None
+    assert set(cgmes3.EQ.property(c.Terminal, "phases").literals) == {m.value for m in c.PhaseCode}
     assert cgmes3.TP.allowed_literals(c.SynchronousMachineOperatingMode) == ()
 
 
@@ -141,11 +143,10 @@ def test_max_falls_back_to_sdk_multiplicity():
     assert cgmes3.GL.property(c.Location, "power_system_resources").max == 1  # profile max wins
 
 
-def test_known_gaps_do_not_crash():
-    uf = cgmes3.SV.property(c.VsConverter, "VsConverter.uf")
-    assert uf is not None and uf.python_name is None and not uf.in_sdk and uf.required
-    stale = cgmes3.SC.property(c.SynchronousMachine, "SynchronousMachine.GeneratingUnit")
-    assert stale.namespace == "cim15" and stale.python_name is None
+def test_no_sdk_gaps():
+    # the CIMTool OWL listed VsConverter.uf and a stale cim15 member; the vocabularies do not
+    assert cgmes3.SV.property(c.VsConverter, "VsConverter.uf") is None
+    assert cgmes3.SC.property(c.SynchronousMachine, "SynchronousMachine.GeneratingUnit") is None
     gaps = {
         (p.keyword, i.name)
         for p in cgmes3.profiles
@@ -153,7 +154,7 @@ def test_known_gaps_do_not_crash():
         for i in p.properties(cls)
         if i.python_name is None
     }
-    assert gaps == {("SV", "VsConverter.uf"), ("SC", "SynchronousMachine.GeneratingUnit")}
+    assert gaps == set()
     assert not cgmes3.SSH.has_property(c.VsConverter, "uf")
 
 

@@ -37,14 +37,20 @@ def test_load_source_config():
     cfg = ps.load_source_config()
     kws = [p["keyword"] for p in cfg["profiles"]]
     assert sorted(kws) == ["DL", "DY", "EQ", "EQBD", "GL", "OP", "SC", "SSH", "SV", "TP"]
-    assert cfg["commit"] == "1c7708f5d3bde53e154201707f31961573868cf2"
+    assert cfg["repo"] == "entsoe/CGMES-AP"
+    assert cfg["commit"] == "e96dd4e323b1e2236e141dd03bf9adea81672e00"
     assert all(len(p["sha256"]) == 64 and p["size"] > 0 for p in cfg["profiles"])
     eq = next(p for p in cfg["profiles"] if p["keyword"] == "EQ")
     assert ps.profile_url(cfg, eq) == (
-        "https://raw.githubusercontent.com/cimug-org/CGMES-CIM17/"
-        "1c7708f5d3bde53e154201707f31961573868cf2/CGMES-CIM17/Profiles/CGMES-CoreEquipment.owl"
+        "https://raw.githubusercontent.com/entsoe/CGMES-AP/"
+        "e96dd4e323b1e2236e141dd03bf9adea81672e00/CGMES/RDFS/"
+        "61970-600-2_Equipment-AP-Voc-RDFS2020.rdf"
     )
-    assert eq["uri"] == "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"
+    assert cfg["schema"]["commit"] == "1c7708f5d3bde53e154201707f31961573868cf2"
+    assert ps.schema_url(cfg).startswith(
+        "https://raw.githubusercontent.com/cimug-org/CGMES-CIM17/1c7708f5d3bde53e154201707f31961573868cf2/"
+    )
+    assert [c["class"] for c in cfg["corrections"]] == ["Equipment"]
 
 
 def test_download_and_cache(tmp_path, monkeypatch):

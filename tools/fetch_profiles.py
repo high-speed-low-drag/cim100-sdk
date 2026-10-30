@@ -1,4 +1,4 @@
-"""Fetch the pinned CGMES profile OWL files into build/profiles/.
+"""Fetch the pinned CGMES profile vocabularies (ENTSO-E RDFS) into build/profiles/.
 
 Usage: fetch_profiles.py [--force] [--dest DIR] [--schema]
   --schema  also fetch the pinned CGMES EA model (.qea, ~50 MB) that tools/dump_eu_ir.py reads.

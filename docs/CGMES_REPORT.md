@@ -23,7 +23,7 @@ Phase 3. Milestone notes are in [PROGRESS.md](PROGRESS.md).
 
 ```python
 from cim100.profiles import cgmes3, validate_profile
-from cim100.profiles.cgmes3 import ACLineSegment, Terminal   # only the 249 CGMES classes (same objects as cim100.X)
+from cim100.profiles.cgmes3 import ACLineSegment, Terminal   # only the 490 CGMES classes (same objects as cim100.X)
 from cim100.serialization import write_cgmes, read_cgmes, CgmesHeader
 
 cgmes3.EQ.required(ACLineSegment)            # PropertyInfo for mRID, name, r, x, bch, ...
@@ -81,14 +81,19 @@ These are ordered by how much they matter.
 5. **ENTSO-E excerpt in tests: replaced.** The tests use a hand-written fixture
    (`tests/serialization/data/cgmes3_fixture/`); ENTSO-E files are only downloaded by the opt-in
    test, with sha256 checks.
-6. **Not SDK gaps after all: errors in the CIMTool OWL.** The SDK model is CIM17
-   (IEC61970CIM17v40, the same version as the CGMES-CIM17 EA model; "CIM100" is the namespace
-   name used from CIM17 on). Compared with the official ENTSO-E RDFS, the OWL-derived snapshot has
-   4 extra properties and nothing missing: `VsConverter.uf` (SV), the stale
-   `cim15:SynchronousMachine.GeneratingUnit` (SC) and `BasicIntervalSchedule.value1Multiplier` /
-   `value2Multiplier` (EQ). `Simple_Float` is an OWL-only datatype name; the RDFS says `Float`.
-   The Dynamics OWL is empty; the CGMES-CIM17 EA copy has a newer Dynamics package (217 more
-   classes) than the published CIM17v40, which no CGMES 3.0 profile uses.
+6. **Profiles now come from the official ENTSO-E vocabularies; no SDK gaps.** The SDK model is
+   CIM17 (IEC61970CIM17v40, the same version as the CGMES-CIM17 EA model; "CIM100" is the
+   namespace name used from CIM17 on). The CIMTool OWL used before had 4 properties the official
+   RDFS does not (`VsConverter.uf`, a stale `cim15:SynchronousMachine.GeneratingUnit`,
+   `BasicIntervalSchedule.value1Multiplier`/`value2Multiplier`), the non-standard `Simple_Float`
+   datatype, narrowed enumeration lists, looser multiplicities and an empty Dynamics profile. The
+   snapshot is now built from `entsoe/CGMES-AP` (`codegen/rdfs_reader.py`): all 10 profiles,
+   including **DY with 260 classes and 2,787 properties**, and every one of them maps to an SDK
+   member. Differences that matter to users: `Terminal.ConductingEquipment` and
+   `PhaseTapChangerLinear/NonLinear.xMin` are required in EQ, `PowerTransformerEnd.g`,
+   `connectionKind` and `ratedS` are optional, and no enumeration is narrowed. One error of the
+   vocabularies is corrected in `profile-source.toml` (`[[corrections]]`): SSH lists `Equipment`
+   without the `Description` stereotype (reported upstream as a follow-up).
 7. **Smaller items:**
    - **Header defaults:** the default modelling authority set is a placeholder
      (`http://cim100-sdk.invalid/...`). DependentOn follows the samples' chain

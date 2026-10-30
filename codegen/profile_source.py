@@ -1,4 +1,4 @@
-"""Pinned CGMES profile OWL files and the CGMES EA model (`[schema]`): load config, download with
+"""Pinned CGMES profile vocabularies (ENTSO-E RDFS) and the CGMES EA model (`[schema]`): load config, download with
 checksum verification, cache."""
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _cache_valid(target: Path, entry: dict) -> bool:
 def ensure_profiles(
     dest: Path | None = None, force: bool = False, config: dict | None = None
 ) -> dict[str, Path]:
-    """Download missing or stale OWL files into dest; return {keyword: path}."""
+    """Download missing or stale vocabulary files into dest; return {keyword: path}."""
     config = config or load_source_config()
     dest = Path(dest or DEFAULT_DEST)
     dest.mkdir(parents=True, exist_ok=True)
@@ -97,7 +97,8 @@ def cached_profiles(dest: Path | None = None, config: dict | None = None) -> dic
 
 
 def schema_url(config: dict) -> str:
-    return config["schema"]["url"].format(commit=config["commit"], file=config["schema"]["file"])
+    schema = config["schema"]
+    return schema["url"].format(commit=schema["commit"], file=schema["file"])
 
 
 def verify_schema(path: Path, entry: dict) -> None:

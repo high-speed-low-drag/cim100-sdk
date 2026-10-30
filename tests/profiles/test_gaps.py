@@ -1,9 +1,9 @@
-"""Snapshot members the SDK does not model, pinned exactly (see PLAN.md Phase 3 facts).
+"""Every snapshot member is modelled by the SDK (see PLAN.md Phase 3 facts).
 
 A snapshot member counts as modelled only when the SDK has it in the same namespace (``cim`` or
-``eu``, from ``ClassMeta``/``AttrMeta``/``EndMeta.namespace``). The European extensions (C2)
-are modelled; what is left are CIM17-2 members missing from CIM100 and stale CIM15 members in
-the ShortCircuit OWL."""
+``eu``, from ``ClassMeta``/``AttrMeta``/``EndMeta.namespace``). The European extensions (C2) are
+modelled; with the ENTSO-E vocabularies as the source nothing else is missing (the CIMTool OWL
+used before listed ``VsConverter.uf``, ``Simple_Float`` and stale CIM15 members)."""
 
 import importlib
 import json
@@ -55,42 +55,6 @@ EU_PROPERTIES = {
 }
 EU_RANGES = {"eu:LimitKind": ["EQ"], "eu:SolarPowerPlant": ["EQ"], "eu:WindPowerPlant": ["EQ"]}
 
-# CIM17-2 members missing from CIM100, and stale CIM15 members left in the ShortCircuit OWL.
-CIM17_PROPERTIES = {"cim:VsConverter.uf": ["SV"]}
-CIM17_RANGES = {"cim:Simple_Float": ["SSH", "SV"]}
-STALE_SC_PROPERTIES = {"cim15:SynchronousMachine.GeneratingUnit": ["SC"]}
-STALE_SC_RANGES = {
-    f"cim15:{t}": ["SC"] for t in ("Conductance", "Reactance", "Resistance", "Susceptance")
-}
-ORPHANS = {
-    "cim:Simple_Float.value": ["SSH", "SV"],
-    **{
-        f"cim15:{p}": ["SC"]
-        for p in (
-            "PhaseTapChangerNonLinear.xMedian",
-            "RotatingMachine.parametersFormType",
-            "Season.name",
-            "ShuntCompensator.bPerSection",
-            "ShuntCompensator.gPerSection",
-            "Terminal.sequenceNumber",
-        )
-    },
-    **{
-        f"cim:{p}": ["SC"]
-        for p in (
-            "Measurement.Unit",
-            "OperationalLimit.type",
-            "PhaseTapChanger.TransformerWinding",
-            "PhaseTapChanger.phaseTapChangerType",
-            "PhaseTapChanger.stepPhaseShiftIncrement",
-            "RatioTapChanger.TransformerWinding",
-            "ShuntCompensator.reactivePerSection",
-            "TapChanger.RegulatingControl",
-        )
-    },
-}
-
-
 def _cls(name):
     module, cls = BY_NAME[name].split(":")
     return getattr(importlib.import_module(module), cls)
@@ -120,7 +84,7 @@ def _gaps():
     snap = json.loads(
         resources.files("cim100.profiles").joinpath("data/cgmes_3_0.json").read_text("utf-8")
     )
-    gaps: dict[str, dict[str, set]] = {k: {} for k in ("class", "property", "range", "orphan")}
+    gaps: dict[str, dict[str, set]] = {k: {} for k in ("class", "property", "range")}
 
     def add(kind, key, kw):
         gaps[kind].setdefault(key, set()).add(kw)
@@ -137,19 +101,11 @@ def _gaps():
                     pre, local = rng.split(":", 1)
                     if not (_class_in_sdk(local, pre) or (pre == "cim" and local in PRIMITIVES)):
                         add("range", rng, kw)
-        for o in p["orphan_properties"]:
-            pre, qname = o.split(":", 1)
-            if pre != "cim" or not _in_sdk(qname):
-                add("orphan", o, kw)
     return {k: {n: sorted(v) for n, v in d.items()} for k, d in gaps.items()}
 
 
-def test_known_gaps_exact():
-    gaps = _gaps()
-    assert gaps["class"] == {}
-    assert gaps["property"] == {**CIM17_PROPERTIES, **STALE_SC_PROPERTIES}
-    assert gaps["range"] == {**CIM17_RANGES, **STALE_SC_RANGES}
-    assert gaps["orphan"] == ORPHANS
+def test_no_gaps():
+    assert _gaps() == {"class": {}, "property": {}, "range": {}}
 
 
 XSD_PY = {"xsd:string": "str", "xsd:boolean": "bool"}

@@ -152,7 +152,9 @@ class has there, which are required, and how many items an association may have.
 ordinary `cim100` objects; a profile is a view over them (`cim100.profiles`). The profiles are those
 of CGMES 3.0 (IEC 61970-600-2, CIM100 namespace `http://iec.ch/TC57/CIM100#`): `EQ` (equipment),
 `SSH` (steady state hypothesis), `TP` (topology), `SV` (state variables), `DL`, `GL`, `OP`, `SC`,
-`EQBD` and `DY`. `DY` is empty in the source.
+`EQBD` and `DY` (dynamics models: exciters, governors, stabilisers, wind turbines, ...). They are
+read from the official ENTSO-E vocabularies (RDFS) and every class and property they list is a
+member of the SDK.
 
 ```python
 from cim100 import ACLineSegment, Terminal
@@ -290,10 +292,7 @@ print(doc.headers["demo_EQ.xml"].modeling_authority_set)  # http://example.org/m
   the ENTSO-E RDFS (`profile-source.toml` `[units]`); `cgmes3.profile_set.unit_exponent("Voltage")`
   is 3.
 - **Known limitations.** Objects of classes without an mRID (`PositionPoint`, `Sv*`, curve points,
-  ...) get `_gen<N>` ids: not UUIDs, and not stable through a read and write. `VsConverter.uf` and
-  the `Simple_Float` ranges (SV, SSH) of CGMES 3.0 have no counterpart in the model and are dropped
-  on read (with a warning); about 15 stale CIM15/16 properties of the ShortCircuit OWL are not
-  modelled. The Dynamics (DY) profile is empty in the source. Only equipment-level descriptions
+  ...) get `_gen<N>` ids: not UUIDs, and not stable through a read and write. Only equipment-level descriptions
   are written for classes a profile lacks (the nearest ancestor that has properties there); an
   object that is only described in a read gets the most specific class seen. A zip is read fully
   into memory (no size limit). With `EQBD` selected and no `boundary=`, the EQBD file has no
@@ -344,13 +343,15 @@ sha256 in `model-source.toml` (with a mirror in `netbeheernederland/tc57cim`). T
 is fetched at build time. The UML project file states that it is dedicated to the public domain under an
 Apache 2.0 license (the CIMTool repository that hosts it is LGPL-2.1 for its own code).
 
-The CGMES 3.0 profiles (`cim100.profiles`) are derived from the CIMTool OWL files of
-`cimug-org/CGMES-CIM17` (Apache-2.0), `CGMES-CIM17/Profiles/*.owl` (IEC 61970-600-2:2021), pinned by
-commit `1c7708f5d3bde53e154201707f31961573868cf2` and per-file sha256 in `profile-source.toml`. The
-OWL files are not committed (`tools/fetch_profiles.py` downloads them); the derived snapshot
-`src/cim100/profiles/data/cgmes_3_0.json` is. The European extension classes (`eu:`) come from the
-same repository's EA model (`ExtEuBase` package). Profile URIs, keywords and versions are those of
-the ENTSO-E vocabularies in `entsoe/CGMES-AP` (Apache-2.0).
+The CGMES 3.0 profiles (`cim100.profiles`) are derived from the ENTSO-E RDFS2020 vocabularies of
+`entsoe/CGMES-AP` (Apache-2.0), `CGMES/RDFS/61970-600-2_*-AP-Voc-RDFS2020.rdf`
+(IEC 61970-600-2:2021), pinned by commit `e96dd4e323b1e2236e141dd03bf9adea81672e00` and per-file
+sha256 in `profile-source.toml`. Classes, properties, multiplicities, enumeration literals, profile
+URIs and the fixed unit multipliers all come from these files; one known error (SSH lists
+`Equipment` without the `Description` stereotype) is corrected by the `[[corrections]]` table there.
+The files are not committed (`tools/fetch_profiles.py` downloads them); the derived snapshot
+`src/cim100/profiles/data/cgmes_3_0.json` is. The European extension classes (`eu:`) of the model
+come from the EA model of `cimug-org/CGMES-CIM17` (Apache-2.0, `ExtEuBase` package).
 
 `tests/serialization/data/cgmes3_fixture/` is a hand-written CGMES 3.0 file set (made-up content
 in the layout of the CGMES files). No ENTSO-E data is committed: the ENTSO-E CGMES 3.0 Conformity

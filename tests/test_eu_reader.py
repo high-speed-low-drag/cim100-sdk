@@ -181,8 +181,8 @@ def test_schema_pin():
 def test_schema_download_verifies(tmp_path, monkeypatch):
     good = b"SQLite format 3\x00" + b"x" * 32
     cfg = {
-        "commit": "c0ffee",
         "schema": {
+            "commit": "c0ffee",
             "file": "m.qea",
             "url": "https://example.invalid/{commit}/{file}",
             "sha256": hashlib.sha256(good).hexdigest(),

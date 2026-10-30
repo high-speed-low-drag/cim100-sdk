@@ -22,7 +22,7 @@ def class_exports():
 def test_exports_are_exactly_the_profile_classes():
     exported = class_exports()
     assert set(exported) == set(cgmes3.class_names) == {k.__name__ for k in cgmes3.classes}
-    assert len(exported) == len(set(exported)) == 249
+    assert len(exported) == len(set(exported)) == 490
     assert cgmes3.__all__ == sorted(cgmes3.__all__)
     assert set(cgmes3.__all__) >= set(cgmes3.profile_set.keywords) | API
 

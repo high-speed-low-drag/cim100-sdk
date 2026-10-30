@@ -1,4 +1,5 @@
-"""Read the pinned CGMES 3.0 OWL files and write src/cim100/profiles/data/cgmes_3_0.json.
+"""Read the pinned CGMES 3.0 vocabularies (ENTSO-E RDFS) and write
+src/cim100/profiles/data/cgmes_3_0.json.
 
 Usage: dump_profiles.py [--out PATH] [--check]
   --check  do not write; exit 1 if the snapshot on disk differs from a fresh read.
@@ -6,16 +7,17 @@ Usage: dump_profiles.py [--out PATH] [--check]
 Snapshot schema (keys sorted; URIs compacted to `prefix:Local` with the `namespaces` table):
   source: {repo, commit, license}
   namespaces: {prefix: namespace URI}
-  units: {datatype: {multiplier, unit}}   (profile-source.toml [units]; unit absent for Money)
+  units: {datatype: {multiplier, unit}}   (cims:isFixed of the datatypes; unit absent for Money)
   profiles: {keyword: {keyword, name, file, uri, version, base, comment,
-                       orphan_properties: ["cim:Class.prop", ...],
                        classes: {CIM name: class}}}
-  class: {ns, super, concrete, enumeration, stereotypes, literals (list or null = all),
-          min_instances, properties: {"Class.prop": property}}
-  property: {ns, kind ("attribute"/"association"/null), min, max (null = CIM multiplicity),
-             range, range_kind ("datatype"/"enumeration"/"compound"/"class"/null),
-             targets (profile classes allowed as range), stereotypes}
-A property sits under the class that owns it in the profile, which is the side written in CIMXML.
+  class: {ns, super, concrete, enumeration, stereotypes, literals (list; null if not an enum),
+          properties: {"Class.prop": property}}
+  property: {ns, kind ("attribute"/"association"), min, max (null = unbounded), range,
+             range_kind ("datatype"/"enumeration"/"compound"/"class"),
+             targets (the range class when the profile lists it), stereotypes}
+A property sits under the class that owns it in the profile (its rdfs:domain; for an
+association the end with cims:AssociationUsed "Yes"), which is the side written in CIMXML.
+The `[[corrections]]` of profile-source.toml (known errors of the vocabularies) are applied.
 """
 
 from __future__ import annotations
@@ -28,32 +30,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from codegen.owl_reader import OwlClass, OwlProfile, OwlProperty, read_owl, split_uri
 from codegen.profile_source import ensure_profiles, load_source_config
+from codegen.rdfs_reader import RdfsClass, RdfsProfile, RdfsProperty, read_rdfs, split_uri
 
 SNAPSHOT = ROOT / "src" / "cim100" / "profiles" / "data" / "cgmes_3_0.json"
 NAMESPACES = {
     "cim": "http://iec.ch/TC57/CIM100#",
     "eu": "http://iec.ch/TC57/CIM100-European#",
-    "cim15": "http://iec.ch/TC57/2010/CIM-schema-cim15#",
     "xsd": "http://www.w3.org/2001/XMLSchema#",
 }
 _PREFIX = {v: k for k, v in NAMESPACES.items()}
 
 
-def prefix(ns: str | None) -> str | None:
-    return None if ns is None else _PREFIX.get(ns, ns)
+def prefix(ns: str) -> str:
+    return _PREFIX.get(ns, ns)
 
 
-def compact(uri: str | None) -> str | None:
-    if uri is None:
-        return None
+def compact(uri: str) -> str:
     ns, local = split_uri(uri)
     p = _PREFIX.get(ns)
     return f"{p}:{local}" if p else uri
 
 
-def _prop(p: OwlProperty) -> dict:
+def _prop(p: RdfsProperty) -> dict:
     return {
         "ns": prefix(p.namespace),
         "kind": p.kind,
@@ -66,7 +65,7 @@ def _prop(p: OwlProperty) -> dict:
     }
 
 
-def _cls(c: OwlClass) -> dict:
+def _cls(c: RdfsClass) -> dict:
     return {
         "ns": prefix(c.namespace),
         "super": c.superclass,
@@ -74,34 +73,63 @@ def _cls(c: OwlClass) -> dict:
         "enumeration": c.enumeration,
         "stereotypes": list(c.stereotypes),
         "literals": None if c.literals is None else list(c.literals),
-        "min_instances": c.min_instances,
         "properties": {p.name: _prop(p) for p in c.properties},
     }
 
 
-def profile_entry(entry: dict, prof: OwlProfile) -> dict:
+def profile_entry(entry: dict, prof: RdfsProfile) -> dict:
+    if prof.keyword != entry["keyword"]:
+        raise ValueError(
+            f"{entry['file']}: keyword {prof.keyword!r}, pinned as {entry['keyword']!r}"
+        )
     return {
-        "keyword": entry["keyword"],
+        "keyword": prof.keyword,
         "name": prof.name,
         "file": entry["file"],
-        "uri": entry["uri"],
-        "version": entry["version"],
-        "base": prof.base,
+        "uri": prof.uri,
+        "version": prof.version,
+        "base": prof.namespace,
         "comment": prof.comment,
-        "orphan_properties": [f"{prefix(ns)}:{name}" for ns, name in prof.orphan_properties],
         "classes": {c.name: _cls(c) for c in prof.classes},
     }
 
 
+def merged_units(profiles: list[RdfsProfile]) -> dict[str, dict[str, str]]:
+    """The fixed units over all profiles; a datatype fixed differently in two profiles raises."""
+    out: dict[str, tuple[str, str | None]] = {}
+    for prof in profiles:
+        for dt, unit in prof.units.items():
+            if out.setdefault(dt, unit) != unit:
+                raise ValueError(f"{dt}: fixed as {out[dt]} and as {unit} ({prof.keyword})")
+    return {
+        dt: {"multiplier": m} | ({"unit": u} if u is not None else {})
+        for dt, (m, u) in sorted(out.items())
+    }
+
+
+def apply_corrections(profiles: dict[str, dict], corrections: list[dict]) -> None:
+    """Apply the `[[corrections]]` of profile-source.toml; one that no longer applies raises."""
+    for c in corrections:
+        cls = profiles[c["profile"]]["classes"].get(c["class"])
+        if cls is None:
+            raise ValueError(f"correction: no class {c['class']} in {c['profile']}")
+        stereo = c["add_stereotype"]
+        if stereo in cls["stereotypes"]:
+            raise ValueError(
+                f"correction: {c['profile']} {c['class']} already has {stereo!r}; remove the entry"
+            )
+        cls["stereotypes"] = sorted([*cls["stereotypes"], stereo])
+
+
 def build_snapshot(config: dict, paths: dict[str, Path]) -> dict:
+    read = {e["keyword"]: read_rdfs(paths[e["keyword"]]) for e in config["profiles"]}
+    profiles = {e["keyword"]: profile_entry(e, read[e["keyword"]]) for e in config["profiles"]}
+    apply_corrections(profiles, config.get("corrections", []))
     return {
         "source": {k: config[k] for k in ("repo", "commit", "license")},
         "namespaces": NAMESPACES,
-        "units": {k: dict(v) for k, v in config.get("units", {}).items()},
-        "profiles": {
-            e["keyword"]: profile_entry(e, read_owl(paths[e["keyword"]]))
-            for e in config["profiles"]
-        },
+        "units": merged_units(list(read.values())),
+        "profiles": profiles,
     }
 
 
@@ -126,10 +154,7 @@ def main() -> int:
     print(f"wrote {args.out} ({args.out.stat().st_size:,} bytes)")
     for kw, p in snap["profiles"].items():
         props = sum(len(c["properties"]) for c in p["classes"].values())
-        print(
-            f"  {kw:5} {p['name']:22} classes {len(p['classes']):4}  properties {props:4}"
-            f"  orphans {len(p['orphan_properties']):3}"
-        )
+        print(f"  {kw:5} {p['name']:22} classes {len(p['classes']):4}  properties {props:5}")
     return 0
 
 

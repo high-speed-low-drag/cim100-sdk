@@ -1,132 +1,92 @@
-# Pinned CGMES 3.0 profiles (CIMTool OWL, IEC 61970-600-2:2021). Never committed; cached in
-# build/profiles/. The derived snapshot src/cim100/profiles/data/cgmes_3_0.json is committed.
-repo = "cimug-org/CGMES-CIM17"
-commit = "1c7708f5d3bde53e154201707f31961573868cf2"
+# Pinned CGMES 3.0 profiles (IEC 61970-600-2:2021): the official ENTSO-E RDFS2020 vocabularies.
+# Never committed; cached in build/profiles/. The derived snapshot
+# src/cim100/profiles/data/cgmes_3_0.json is committed. Keyword, profile URI (owl:versionIRI, the
+# md:Model.profile of an instance file), version, classes, properties and the fixed unit
+# multipliers of the datatypes (cims:isFixed) are all read from the files (tools/dump_profiles.py).
+repo = "entsoe/CGMES-AP"
+commit = "e96dd4e323b1e2236e141dd03bf9adea81672e00"
 license = "Apache-2.0"
-url = "https://raw.githubusercontent.com/cimug-org/CGMES-CIM17/{commit}/CGMES-CIM17/Profiles/{file}"
+url = "https://raw.githubusercontent.com/entsoe/CGMES-AP/{commit}/CGMES/RDFS/{file}"
 
-# Profile metadata that the OWL files do not carry (their ontology header has only a label and a
-# comment). keyword, uri and version are dcat:keyword, owl:versionIRI and owl:versionInfo of the
-# official ENTSO-E RDFS2020 vocabularies, entsoe/CGMES-AP commit
-# e96dd4e323b1e2236e141dd03bf9adea81672e00, CGMES/RDFS/61970-600-2_<Name>-AP-Voc-RDFS2020.rdf
-# (Equipment for EQ). powsybl-core CgmesNamespace.java (CIM_100_*_PROFILE) uses the same URIs for
-# EQ, OP, TP, SV, SSH and EQBD. The uri is the md:Model.profile / dcterms:conformsTo of a file.
 [[profiles]]
 keyword = "EQ"
-file = "CGMES-CoreEquipment.owl"
-sha256 = "00c4108627073a2780927143f2f3ddc78ad796f7fa59e014a3fbf0542ccf8829"
-size = 388886
-uri = "http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_Equipment-AP-Voc-RDFS2020.rdf"
+sha256 = "e95c02b1eca667dabf7c8bf0e0a0e47f0b4813c8a3899eb55e50608fdb4ba27d"
+size = 584337
 
 [[profiles]]
 keyword = "DL"
-file = "CGMES-DiagramLayout.owl"
-sha256 = "49a623e4f8e9d5fea7c43ba2055c4bea49565da9373d0ef83124fe2833ae9cd5"
-size = 35438
-uri = "http://iec.ch/TC57/ns/CIM/DiagramLayout-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_DiagramLayout-AP-Voc-RDFS2020.rdf"
+sha256 = "8dbf4ba6ac74a30bb66a24b158fa4469bea6212703fed010774a37a4ff2269bf"
+size = 102712
 
 [[profiles]]
 keyword = "DY"
-file = "CGMES-Dynamics.owl"
-sha256 = "ea42f7c9ef5f677cd12a1e572071476a3176bb18af38870151f532734a8f6dac"
-size = 1841
-uri = "http://iec.ch/TC57/ns/CIM/Dynamics-EU/1.0"
-version = "1.0.0"
+file = "61970-600-2_Dynamics-AP-Voc-RDFS2020.rdf"
+sha256 = "a077ff7797f73fe2ee21ba085834224c7d6d7948c08f292d0e78cd4b50e8d0a6"
+size = 2270863
 
 [[profiles]]
 keyword = "EQBD"
-file = "CGMES-EquipmentBoundary.owl"
-sha256 = "d023de23fa8e8479ee47387be4c0ef8749f7980ae764f6d75edb7cd26ff11023"
-size = 41799
-uri = "http://iec.ch/TC57/ns/CIM/EquipmentBoundary-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_EquipmentBoundary-AP-Voc-RDFS2020.rdf"
+sha256 = "094299cc68aaa5b0ac82c57d8a093f42a08a2d31a647fab9f5d58223a95aeac1"
+size = 109925
 
 [[profiles]]
 keyword = "GL"
-file = "CGMES-GeographicalLocation.owl"
-sha256 = "29a2f4336ac6b1ca18f05a9d66a0b9fc8d3a39675dcf7d02f06a26b51fd3ac53"
-size = 40688
-uri = "http://iec.ch/TC57/ns/CIM/GeographicalLocation-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_GeographicalLocation-AP-Voc-RDFS2020.rdf"
+sha256 = "567bdf586b216e2921987fcd4cf294e4666d06008e4033e4beabb1d8d199161f"
+size = 40982
 
 [[profiles]]
 keyword = "OP"
-file = "CGMES-Operation.owl"
-sha256 = "5807ac3ea94caac890174716af72ff530ed3964ddfab596a8b3d5940328f5451"
-size = 101283
-uri = "http://iec.ch/TC57/ns/CIM/Operation-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_Operation-AP-Voc-RDFS2020.rdf"
+sha256 = "a88f62778d3f17a61ece4d106b4352fffa4e8811028238d2589aa7a11d1847cb"
+size = 155329
 
 [[profiles]]
 keyword = "SC"
-file = "CGMES-ShortCircuit.owl"
-sha256 = "cfc7942e24f61edbc1b8560ca64c9ab7c15cd39ac78233620baef12551ebc58d"
-size = 145090
-uri = "http://iec.ch/TC57/ns/CIM/ShortCircuit-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_ShortCircuit-AP-Voc-RDFS2020.rdf"
+sha256 = "9346107464a1f848473411f31666ccd9621d4e1c2048cdfc38b34bd866123f5d"
+size = 199586
 
 [[profiles]]
 keyword = "SV"
-file = "CGMES-StateVariables.owl"
-sha256 = "69e8195b80492468455aae9c626a3c3c9971d7cd5bc416562f7a192aaadb893e"
-size = 61396
-uri = "http://iec.ch/TC57/ns/CIM/StateVariables-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_StateVariables-AP-Voc-RDFS2020.rdf"
+sha256 = "ff40b3292c4c70f7fa12e15f11c5bd05c524b67016bacba072561bafc296a0c7"
+size = 119473
 
 [[profiles]]
 keyword = "SSH"
-file = "CGMES-SteadyStateHypothesis.owl"
-sha256 = "be90568be01357176e888c6ae97cf7b0a226daa3c999d780599e6b97fa639afd"
-size = 128675
-uri = "http://iec.ch/TC57/ns/CIM/SteadyStateHypothesis-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_SteadyStateHypothesis-AP-Voc-RDFS2020.rdf"
+sha256 = "a9577ccd79007459a23929ff5dca6c3b6c8135563565b5ba02f4797d701ee905"
+size = 207359
 
 [[profiles]]
 keyword = "TP"
-file = "CGMES-Topology.owl"
-sha256 = "0097fb000f73049860c82f0505d7fd2ea7e89bb5b2df6e6d5c760c5b08885e1e"
-size = 22446
-uri = "http://iec.ch/TC57/ns/CIM/Topology-EU/3.0"
-version = "3.0.0"
+file = "61970-600-2_Topology-AP-Voc-RDFS2020.rdf"
+sha256 = "da7de6cf47958cc00413bc17b1ba2a413352ca40cf07daaba77d1f7b7f8bd2bf"
+size = 30750
 
-# Fixed unit multipliers of the CGMES 3.0 datatypes: cims:isFixed of <Datatype>.multiplier and
-# <Datatype>.unit in the same ENTSO-E RDFS2020 vocabularies (identical in every profile that uses the
-# datatype). The CIMTool OWL files do not carry them and CIM17 leaves most multipliers open. The SDK
-# holds SI values; write_cgmes/read_cgmes scale by these multipliers. Money has no fixed unit.
-[units]
-ActivePower = { multiplier = "M", unit = "W" }
-ActivePowerPerCurrentFlow = { multiplier = "M", unit = "WPerA" }
-ActivePowerPerFrequency = { multiplier = "M", unit = "WPers" }
-AngleDegrees = { multiplier = "none", unit = "deg" }
-AngleRadians = { multiplier = "none", unit = "rad" }
-ApparentPower = { multiplier = "M", unit = "VA" }
-Capacitance = { multiplier = "none", unit = "F" }
-Conductance = { multiplier = "none", unit = "S" }
-CurrentFlow = { multiplier = "none", unit = "A" }
-Frequency = { multiplier = "none", unit = "Hz" }
-Inductance = { multiplier = "none", unit = "H" }
-Length = { multiplier = "k", unit = "m" }
-Money = { multiplier = "none" }
-PU = { multiplier = "none", unit = "none" }
-PerCent = { multiplier = "none", unit = "none" }
-Reactance = { multiplier = "none", unit = "ohm" }
-ReactivePower = { multiplier = "M", unit = "VAr" }
-RealEnergy = { multiplier = "M", unit = "Wh" }
-Resistance = { multiplier = "none", unit = "ohm" }
-RotationSpeed = { multiplier = "none", unit = "Hz" }
-Seconds = { multiplier = "none", unit = "s" }
-Susceptance = { multiplier = "none", unit = "S" }
-Temperature = { multiplier = "none", unit = "degC" }
-Voltage = { multiplier = "k", unit = "V" }
-VoltagePerReactivePower = { multiplier = "none", unit = "VPerVAr" }
+# Known errors of the pinned vocabularies, applied by tools/dump_profiles.py. Each must still
+# apply (the build fails once upstream fixes it, so the entry can be removed).
+[[corrections]]
+profile = "SSH"
+class = "Equipment"
+add_stereotype = "description"
+reason = """SSH lists Equipment as concrete without the Description stereotype, although SSH only
+describes equipment defined in EQ (the ENTSO-E sample SSH files write <cim:Equipment rdf:about>, and
+the CIMTool OWL of the same profile has the stereotype). Without it an SSH Equipment element would
+define a second object."""
 
-# The CGMES-CIM17 EA model (SQLite .qea: CIM17-2, CGMES 3.1 and NC extensions), same repo and
-# commit. tools/dump_eu_ir.py reads its European extension package
+# The CGMES-CIM17 EA model (SQLite .qea: CIM17-2, CGMES 3.1 and NC extensions) of
+# cimug-org/CGMES-CIM17. tools/dump_eu_ir.py reads its European extension package
 # EuropeanCIMExtensions/ExtIEC61970/ExtEuBase (ExtIEC61970Version 3.0, the eu: members of the
 # CGMES 3.0 profiles) into codegen/snapshot/eu_ir.json. Never committed; cached in build/profiles/.
 [schema]
+repo = "cimug-org/CGMES-CIM17"
+commit = "1c7708f5d3bde53e154201707f31961573868cf2"
+license = "Apache-2.0"
 file = "CIM17-2_CGMES31v01_PROF-20v02_NC23v66_MS10v01_DES10v01.qea"
 url = "https://raw.githubusercontent.com/cimug-org/CGMES-CIM17/{commit}/CGMES-CIM17/Schema/{file}"
 sha256 = "549089101e387706d687e95c0cd06d75e6a0265f7a8cfeb6b311d9eed1c2793f"

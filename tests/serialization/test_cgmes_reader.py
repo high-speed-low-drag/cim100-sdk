@@ -5,18 +5,20 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import io
+import json
 import os
 import random
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+from importlib import resources
 from pathlib import Path
 
 import pytest
 
 import cim100 as c
-from cim100.profiles import cgmes3
+from cim100.profiles import ProfileSet, cgmes3
 from cim100.serialization import (
     CgmesDocument,
     CgmesHeader,
@@ -374,23 +376,57 @@ def test_property_checks_against_the_profile() -> None:
     assert doc.warnings == ["class 'ACLineSegment' is not in profile(s) TP"]
 
 
-def test_known_sdk_gap_is_warned_once() -> None:
-    vsc = "".join(
-        f'<cim:VsConverter rdf:about="#_{i}"><cim:VsConverter.uf>1.0</cim:VsConverter.uf></cim:VsConverter>'
-        for i in ("v1", "v2")
-    )
-    eq = "".join(f'<cim:VsConverter rdf:ID="_{i}"/>' for i in ("v1", "v2"))
-    files = {"eq.xml": xml([cgmes3.EQ.uri], eq), "sv.xml": xml([cgmes3.SV.uri], vsc)}
+def _snapshot() -> dict:
+    text = resources.files("cim100.profiles").joinpath("data/cgmes_3_0.json").read_text("utf-8")
+    return json.loads(text)  # type: ignore[no-any-return]
+
+
+VSC_UF = "".join(
+    f'<cim:VsConverter rdf:about="#_{i}"><cim:VsConverter.uf>1.0</cim:VsConverter.uf></cim:VsConverter>'
+    for i in ("v1", "v2")
+)
+VSC_EQ = "".join(f'<cim:VsConverter rdf:ID="_{i}"/>' for i in ("v1", "v2"))
+
+
+def test_property_outside_profile_and_sdk_warns() -> None:
+    # VsConverter.uf: in the CIMTool OWL of SV, not in the ENTSO-E vocabulary nor in CIM17
+    files = {"eq.xml": xml([cgmes3.EQ.uri], VSC_EQ), "sv.xml": xml([cgmes3.SV.uri], VSC_UF)}
     doc = read_cgmes(files)
+    assert doc.warnings == ["unknown property 'VsConverter.uf' on VsConverter (x2)"]
+
+
+def test_known_sdk_gap_is_warned_once() -> None:
+    # a profile property the SDK does not have (none in CGMES 3.0: a made-up profile set)
+    snap = _snapshot()
+    snap["profiles"]["SV"]["classes"]["VsConverter"]["properties"]["VsConverter.uf"] = {
+        "ns": "cim", "kind": "attribute", "min": 1, "max": 1, "range": "cim:Voltage",
+        "range_kind": "datatype", "targets": [], "stereotypes": ["attribute"],
+    }  # fmt: skip
+    pset = ProfileSet.from_snapshot(snap, "with gap")
+    files = {"eq.xml": xml([pset.EQ.uri], VSC_EQ), "sv.xml": xml([pset.SV.uri], VSC_UF)}
+    doc = read_cgmes(files, profile_set=pset)
     assert doc.warnings == ["known SDK gap: cim:VsConverter.uf has no SDK member"]
     with pytest.raises(CgmesReadError, match="known SDK gap"):
-        read_cgmes(files, strict=True)
+        read_cgmes(files, strict=True, profile_set=pset)
+
+
+def test_dynamics_file_reads_without_warnings() -> None:
+    body = (
+        '<cim:GovHydro1 rdf:ID="_g"><cim:IdentifiedObject.name>G</cim:IdentifiedObject.name>'
+        "<cim:GovHydro1.mwbase>120</cim:GovHydro1.mwbase></cim:GovHydro1>"
+    )
+    doc = read_cgmes({"dy.xml": xml([cgmes3.DY.uri], body)})
+    g = doc.by_id["g"]
+    assert doc.warnings == [] and g.name == "G"  # type: ignore[attr-defined]
+    assert g.mwbase == 120e6  # type: ignore[attr-defined]  # MW -> W
 
 
 def test_profile_without_classes_is_not_checked() -> None:
-    # DY has no content in the CGMES 3.0 snapshot (the OWL source is empty)
+    snap = _snapshot()
+    snap["profiles"]["DY"]["classes"] = {}
+    pset = ProfileSet.from_snapshot(snap, "empty DY")
     body = '<cim:GovHydro1 rdf:ID="_g"><cim:IdentifiedObject.name>G</cim:IdentifiedObject.name></cim:GovHydro1>'
-    doc = read_cgmes({"dy.xml": xml([cgmes3.DY.uri], body)})
+    doc = read_cgmes({"dy.xml": xml([pset.DY.uri], body)}, profile_set=pset)
     assert len(doc.warnings) == 1 and "have no classes" in doc.warnings[0]
     assert doc.by_id["g"].name == "G"  # type: ignore[attr-defined]
 
