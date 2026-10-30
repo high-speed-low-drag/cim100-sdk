@@ -115,7 +115,7 @@ if no agent is running any more, check `git log` and the working tree for its WI
 
 | # | Work | Status | Commit |
 |---|---|---|---|
-| C1 | OWL reader + profile snapshot | todo | |
+| C1 | OWL reader + profile snapshot | done | 5c866cf |
 | C2 | European extensions | todo | |
 | R1 | Review C1+C2 | todo | |
 | C3 | Profile API + validate_profile | todo | |
@@ -124,3 +124,12 @@ if no agent is running any more, check `git log` and the working tree for its WI
 | R2 | Review C3–C5 | todo | |
 | C6 | MV example + README | todo | |
 | F | Final checks + report | todo | |
+
+- C1 (5c866cf): `profile-source.toml`, `codegen/profile_source.py`, `tools/fetch_profiles.py`, `codegen/owl_reader.py` (OWL conventions in its docstring), `tools/dump_profiles.py [--check]`, snapshot `src/cim100/profiles/data/cgmes_3_0.json` (~290 KB, ships in the wheel). 30 new tests in `tests/profiles/` (292 passed in all).
+  - Snapshot schema (documented in `tools/dump_profiles.py`): `profiles[keyword]` = keyword, name, file, uri, version, base, comment, orphan_properties, classes. Class = ns, super (profile superclass), concrete, enumeration, stereotypes, literals (null = all CIM literals), min_instances, properties. Property (keyed `Class.prop`, under the class that owns it, i.e. the side written in CIMXML) = ns, kind (attribute/association/null), min, max (null = CIM multiplicity), range (`cim:`/`eu:`/`xsd:`/`cim15:` prefixed), range_kind (datatype/enumeration/compound/class), targets (in-profile classes), stereotypes.
+  - Profile URIs, keywords and versions come from `owl:versionIRI`/`dcat:keyword`/`owl:versionInfo` of the ENTSO-E RDFS2020 vocabularies (entsoe/CGMES-AP e96dd4e, `CGMES/RDFS/61970-600-2_*-AP-Voc-RDFS2020.rdf`), matching powsybl `CgmesNamespace` for EQ/OP/TP/SV/SSH/EQBD. All `http://iec.ch/TC57/ns/CIM/<Name>-EU/3.0`, version 3.0.0, except DY `Dynamics-EU/1.0` (1.0.0). Keywords EQ, SSH, TP, SV, DL, GL, OP, SC, EQBD, DY.
+  - Counts (classes / properties): EQ 180/292 (14 eu), TP 14/13 (2 eu), SSH 72/65, SV 23/31, DL 12/26, GL 11/39, OP 37/57, SC 35/106, EQBD 22/27 (11 eu), DY 0/0. The brief's higher SSH/SV/SC numbers counted unattached restrictions, which are now `orphan_properties` (SSH 25, SV 16, SC 15).
+  - Class stereotype `description` = instances are written with `rdf:about` in that profile (defined in another one): e.g. TP Terminal/ConnectivityNode, most SSH classes, SV CsConverter/VsConverter. C4 should use it for `rdf:ID` vs `rdf:about`.
+  - Profile properties of a class are the union along its profile superclasses (EQ restates `OperationalLimit.*` on ActivePowerLimit/ApparentPowerLimit).
+  - Enum literals: only 11 enumerations list literals (`owl:oneOf`, SSH/OP/DL); the rest (all EQ, incl. `eu:LimitKind`) mean "all literals". The EU literals for C2 are in the CGMES-CIM17 clone `Schema/*.qea` (LimitKind: patl, patlt, tatl, tc, tct, highVoltage, lowVoltage, operationalVoltageLimit, alarmVoltage, warningVoltage, stability; BoundaryPoint attributes) and in the ENTSO-E RDFS files.
+  - Pinned SDK gaps (`tests/profiles/test_gaps.py`): eu classes BoundaryPoint, LimitKind, SolarPowerPlant, WindPowerPlant; 14 eu properties; `cim:VsConverter.uf` (SV, min 1 only, no range); range `cim:Simple_Float` (SSH, SV) and orphan `Simple_Float.value`; SC stale: attached `cim15:SynchronousMachine.GeneratingUnit`, ranges `cim15:Conductance/Reactance/Resistance/Susceptance`, and 14 orphan restrictions (6 cim15, 8 cim such as `PhaseTapChanger.TransformerWinding`).
