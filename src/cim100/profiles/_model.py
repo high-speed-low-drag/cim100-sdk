@@ -166,6 +166,22 @@ class Profile:
         n = self._name(cls)
         return n is not None and "description" in self._raw[n]["stereotypes"]
 
+    def element_class(self, cls: type) -> type | None:
+        """The class instances of SDK class `cls` are written as in this profile: `cls` when the
+        profile has it, else its nearest SDK ancestor in the profile that adds properties to its
+        profile superclass (CGMES SSH describes an ACLineSegment as ``cim:Equipment`` with
+        ``Equipment.inService``), else None."""
+        if self.has_class(cls):
+            return cls
+        for anc in cls.__mro__[1:]:
+            if getattr(anc, "_cim_meta", None) is None or not self.has_class(anc):
+                continue
+            own = {i.name for i in self.properties(anc)}
+            sup = self.superclass(anc)
+            if own and (sup is None or own != {i.name for i in self.properties(sup)}):
+                return anc
+        return None
+
     def is_enumeration(self, cls: type | str) -> bool:
         n = self._name(cls)
         return n is not None and bool(self._raw[n]["enumeration"])

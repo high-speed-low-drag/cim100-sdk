@@ -6,7 +6,9 @@ Checks, per object, against the selected profiles that carry its class:
 * error: the class is concrete in none of the selected profiles that carry it;
 * warning: a property is set that none of the selected profiles lists for the class (an end
   also counts as listed when a selected profile lists the opposite end; ``IdentifiedObject.mRID`` is the
-  object id and is never reported, and an attribute still at its SDK default is ignored);
+  object id and is never reported, an attribute still at its SDK default is ignored, and a
+  property a selected profile lists under an ancestor of the class it does not carry counts as
+  listed, see `Profile.element_class`);
 * error: a required property (``min >= 1``) is missing, in each selected profile that lists it;
 * error: more items on an end than the profile's (else the SDK's) maximum;
 * error: an enumeration value outside the literals the profile allows.
@@ -96,12 +98,24 @@ def _plan(cls: type, profiles: tuple[Profile, ...]) -> _Plan:
                 if info.python_name is not None:
                     lits = None if info.literals is None else frozenset(info.literals)
                     by_py.setdefault(info.python_name, []).append((p.keyword, info, lits))
+        # listed under an ancestor in a profile without the class (SSH Equipment.inService of
+        # an ACLineSegment): not reported as unlisted
+        via_ancestor: set[str] = set()
+        for p in profiles:
+            if p not in plan.members:
+                anc = p.element_class(cls)
+                if anc is not None:
+                    via_ancestor.update(i.python_name for i in p.properties(anc) if i.python_name)
         cplan = class_plan(cls)
         for spec in cplan.attrs:
-            attrs.append((spec, tuple(by_py.get(spec.name, ()))))
+            entries = tuple(by_py.get(spec.name, ()))
+            if entries or spec.name not in via_ancestor:
+                attrs.append((spec, entries))
         for es in cplan.ends:
             entries = tuple(by_py.get(es.name, ()))
             if not entries:
+                if es.name in via_ancestor:
+                    continue
                 # listed through the opposite end?
                 try:
                     inv = _end_key(es.desc.inverse)
