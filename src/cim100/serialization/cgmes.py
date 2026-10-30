@@ -41,7 +41,11 @@ Dependencies (``md:Model.DependentOn``)
 Ids
     An object is written with ``rdf:ID="_<mrid>"`` in a profile that defines it (its class is
     concrete there and not a ``description``: `ProfileSet.defining_profiles`) and with
-    ``rdf:about="#_<mrid>"`` in every other profile. References are ``rdf:resource="#_<mrid>"``.
+    ``rdf:about="#_<mrid>"`` in every other profile. A class that is concrete in both EQ and EQBD
+    (BaseVoltage, ConnectivityNode, Line, Substation, Terminal, ...) is defined in exactly one of
+    them: EQ, or EQBD for the objects passed as ``boundary=`` (the writer cannot tell boundary
+    objects from the others); the other file only describes it, and is left without the
+    element when that adds nothing. References are ``rdf:resource="#_<mrid>"``.
     ``cim:IdentifiedObject.mRID`` is written as an element (the plain mrid, no ``_``) in the
     defining file only, when the profile lists it for the class (the samples never repeat it in
     ``rdf:about`` elements; classes outside IdentifiedObject, e.g. ``SvPowerFlow``, have none).
@@ -69,6 +73,12 @@ Enumerations
     ``<scenarioTime>_<process>_<TSO>_<KEYWORD>_<version>.xml`` is available through
     ``file_name`` (fields ``name keyword version scenario``).
 
+Several profiles in one file
+    ``CgmesHeader.combine`` (``{"EQ": ["SC"]}``) writes the ShortCircuit properties into the EQ
+    file, as the ENTSO-E samples do, and lists both profile URIs in its header. Without it every
+    selected profile gets its own file, so an EQ file read with two profile URIs is split on
+    rewrite; ``CgmesDocument.header_for_rewrite()`` sets ``combine`` to keep such files whole.
+
 Reading (`read_cgmes`)
     A CGMES file set (directory, ``.zip``, paths, or ``(name, bytes)`` pairs) is merged into one
     object graph (`CgmesDocument`). An ``rdf:ID`` element defines an object; ``rdf:about`` elements
@@ -79,7 +89,10 @@ Reading (`read_cgmes`)
     ``IdentifiedObject.mRID`` element, else the id without its ``_``. Each file's ``md:FullModel``
     is kept (`CgmesFileHeader`); the profiles named by its ``md:Model.profile`` URIs (unknown URIs
     warn) classify the file's properties: not in the profile, or a known SDK gap
-    (``python_name`` None, e.g. ``VsConverter.uf``), is a warning. Non-strict readers collect
+    (``python_name`` None, e.g. ``VsConverter.uf``), is a warning. A value that differs from one
+    set by an earlier file (or element) is a warning too; the later one wins, so the file order
+    only matters for such conflicts. Objects defined in an EQBD file are listed in
+    ``CgmesDocument.boundary_objects``. Non-strict readers collect
     warnings and dangling references (checked after all files are merged); ``strict=True`` raises.
 
 Reporting
@@ -103,7 +116,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cim100._runtime import CimObject
+from cim100._runtime import CimCompound, CimObject
 from cim100.profiles._model import Profile, ProfileSet
 from cim100.profiles._validate import ProfileIssue, validate_profile
 from cim100.serialization._common import (
@@ -116,6 +129,7 @@ from cim100.serialization._common import (
     assign_ids,
     class_plan,
     collect,
+    encode_value,
     normalize_id,
     resolve_class,
 )
@@ -156,6 +170,7 @@ __all__ = [
 ]
 
 DEFAULT_PROFILES = ("EQ", "SSH", "TP", "SV")
+_BOUNDARY = "EQBD"  # keyword of the equipment boundary profile
 DEFAULT_MAS = "http://cim100-sdk.invalid/modelingAuthoritySet"
 
 # preferred DependentOn, first written alternative wins (see the module docstring)
@@ -190,6 +205,11 @@ class CgmesHeader:
     false. ``profile_uris`` adds ``md:Model.profile`` URIs per keyword (a file holding EQ and SC
     data lists both). ``created`` defaults to now (UTC, one value for the call),
     ``scenario_time`` to ``created``; naive datetimes are taken as UTC.
+
+    ``combine`` writes several selected profiles into one file: ``{"EQ": ["SC"]}`` puts the
+    ShortCircuit properties into the EQ file (as the ENTSO-E samples do), joined to the EQ
+    element of each object, and lists both profile URIs in its header. The guest profile gets no
+    file of its own, model id or dependencies. Profiles that are not selected are ignored.
     """
 
     scenario_time: _dt.datetime | None = None
@@ -203,6 +223,7 @@ class CgmesHeader:
     profile_uris: Mapping[str, Sequence[str]] = field(default_factory=dict)
     overrides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     auto_dependencies: bool = True
+    combine: Mapping[str, Sequence[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -300,15 +321,35 @@ class _ClassPlan:
     props: tuple[PropertyInfo, ...]  # attributes and ends to write (mRID excluded)
 
 
+def _owner(chosen: Sequence[Profile], boundary: bool) -> Profile | None:
+    """The one profile that defines an object (``rdf:ID``, mRID) among the written profiles that
+    could: EQ before EQBD, or EQBD for a boundary object. Classes concrete in both are the only
+    case (BaseVoltage, ConnectivityNode, Line, Substation, ...)."""
+    if not chosen:
+        return None
+    if boundary:
+        for p in chosen:
+            if p.keyword == _BOUNDARY:
+                return p
+    for p in chosen:  # `chosen` is in profile set order
+        if p.keyword != _BOUNDARY:
+            return p
+    return chosen[0]
+
+
 def _plans_for(
-    cls: type, profiles: Sequence[Profile], pset: ProfileSet
+    cls: type, profiles: Sequence[Profile], pset: ProfileSet, boundary: bool = False
 ) -> dict[str, _ClassPlan | None]:
     """Per written profile keyword, how instances of `cls` are written there (None: never)."""
     if not pset.has_class(cls):
         return {p.keyword: None for p in profiles}
     defining_all = pset.defining_profiles(cls)
+    chosen = [p for p in defining_all if p in profiles]
+    owner = _owner(chosen, boundary)
     defined_props = {i.name for d in defining_all for i in d.properties(cls)}
-    order = sorted(profiles, key=lambda p: p not in defining_all)  # defining ones claim first
+    owner_props = defined_props if owner is None else {i.name for i in owner.properties(cls)}
+    # the owner claims first, then the other defining profiles, then the descriptions
+    order = sorted(profiles, key=lambda p: (p is not owner, p not in chosen))
     claimed: set[str] = set()
     out: dict[str, _ClassPlan | None] = {}
     for p in order:
@@ -316,7 +357,8 @@ def _plans_for(
         if el_cls is None:
             out[p.keyword] = None
             continue
-        defining = p in defining_all
+        defining = p is owner
+        skip = owner_props if p in chosen else defined_props  # properties another file carries
         mrid = False
         props = []
         for info in p.properties(el_cls):
@@ -325,7 +367,7 @@ def _plans_for(
             if info.name == "IdentifiedObject.mRID":
                 mrid = defining
                 continue
-            if not defining and info.name in defined_props:
+            if not defining and info.name in skip:
                 continue
             if info.python_name in claimed:
                 continue
@@ -371,9 +413,13 @@ def _build(
     validate: bool,
     strict: bool,
     profile_set: ProfileSet | None,
+    boundary: Iterable[CimObject] = (),
 ) -> tuple[dict[str, bytes], CgmesReport]:
     pset = profile_set if profile_set is not None else _default_set()
     selected = _select(profiles, pset)
+    hdr = header or CgmesHeader()
+    combine = _combine_plan(hdr.combine, selected)
+    boundary_ids = {id(o) for o in boundary}
     if isinstance(objects, CimObject):
         objects = [objects]
     objs = collect(objects, include_reachable)
@@ -391,16 +437,17 @@ def _build(
         m = getattr(t, "mrid", None)
         return _wire_ids(m)[1] if isinstance(m, str) else None
 
-    plans: dict[type, dict[str, _ClassPlan | None]] = {}
+    plans: dict[tuple[type, bool], dict[str, _ClassPlan | None]] = {}
     written_attrs: set[tuple[int, str]] = set()
     written_links: set[tuple[int, str, int]] = set()
     placed: set[int] = set()
     bodies: dict[str, list[ET.Element]] = {p.keyword: [] for p in selected}
     for obj in objs:
         cls = type(obj)
-        per = plans.get(cls)
+        pkey = (cls, id(obj) in boundary_ids)
+        per = plans.get(pkey)
         if per is None:
-            per = plans[cls] = _plans_for(cls, selected, pset)
+            per = plans[pkey] = _plans_for(cls, selected, pset, pkey[1])
         where = f"{class_plan(cls).cim_name} {ids[obj]!r}"
         for p in selected:
             plan = per[p.keyword]
@@ -458,16 +505,70 @@ def _build(
         )
 
     now = _dt.datetime.now(_dt.UTC)
-    report.headers = _header_items(header or CgmesHeader(), selected, now)
-    report.model_ids = {kw: h["about"] for kw, h in report.headers.items()}
+    headers = _header_items(hdr, selected, now)
+    for host, guests in combine.items():  # the guests' elements and URIs move into the host file
+        bodies[host.keyword] = _merge_bodies(
+            bodies[host.keyword], [e for g in guests for e in bodies[g.keyword]]
+        )
+        headers[host.keyword]["profile"] += [g.uri for g in guests]
+        for g in guests:
+            del headers[g.keyword], bodies[g.keyword]
+    report.headers = headers
+    report.model_ids = {kw: h["about"] for kw, h in headers.items()}
     docs: dict[str, bytes] = {}
     for p in selected:
+        if p.keyword not in headers:
+            continue
         root = ET.Element("rdf:RDF", {f"xmlns:{k}": v for k, v in _ROOT_NS})
-        root.append(_header_element(report.headers[p.keyword]))
+        root.append(_header_element(headers[p.keyword]))
         root.extend(bodies[p.keyword])
         ET.indent(root, space="  ")
         docs[p.keyword] = _serialize(root)
     return docs, report
+
+
+def _combine_plan(
+    combine: Mapping[str, Sequence[str]], selected: Sequence[Profile]
+) -> dict[Profile, list[Profile]]:
+    """``{host: [guests]}`` as Profile objects: the guests are written into the host's file."""
+    by_kw = {p.keyword: p for p in selected}
+    out: dict[Profile, list[Profile]] = {}
+    used: set[str] = set()
+    for host_kw, guest_kws in combine.items():
+        if isinstance(guest_kws, str):
+            guest_kws = (guest_kws,)
+        host = by_kw.get(host_kw)
+        guests = [by_kw[k] for k in dict.fromkeys(guest_kws) if k in by_kw and k != host_kw]
+        if host is None:
+            if guests:
+                raise ValueError(f"combine: {host_kw!r} is not among the selected profiles")
+            continue
+        for g in guests:
+            if g.keyword in combine or g.keyword in used:
+                raise ValueError(f"combine: {g.keyword!r} is both a host and a guest, or twice a guest")
+            used.add(g.keyword)
+        if guests:
+            out[host] = guests
+    return out
+
+
+def _ref_key(el: ET.Element) -> str:
+    return (el.get("rdf:ID") or el.get("rdf:about") or "").lstrip("#")
+
+
+def _merge_bodies(host: list[ET.Element], guest: list[ET.Element]) -> list[ET.Element]:
+    """`guest` elements joined to the `host` element of the same object (and element class);
+    elements without a counterpart are appended."""
+    index = {(el.tag, _ref_key(el)): el for el in host}
+    out = list(host)
+    for g in guest:
+        h = index.get((g.tag, _ref_key(g)))
+        if h is not None:
+            h.extend(list(g))
+        else:
+            out.append(g)
+            index[(g.tag, _ref_key(g))] = g
+    return out
 
 
 def _dropped(
@@ -526,10 +627,13 @@ def to_cgmes_strings(
     validate: bool = True,
     strict: bool = False,
     profile_set: ProfileSet | None = None,
+    boundary: Iterable[CimObject] = (),
 ) -> dict[str, str]:
     """The CGMES documents as ``{keyword: CIMXML string}`` (same content as `write_cgmes`;
     problems are reported by ``warnings.warn``, or raised with ``strict=True``)."""
-    docs, _ = _build(objects, profiles, header, include_reachable, validate, strict, profile_set)
+    docs, _ = _build(
+        objects, profiles, header, include_reachable, validate, strict, profile_set, boundary
+    )
     return {kw: d.decode("utf-8") for kw, d in docs.items()}
 
 
@@ -545,6 +649,7 @@ def write_cgmes(
     validate: bool = True,
     strict: bool = False,
     profile_set: ProfileSet | None = None,
+    boundary: Iterable[CimObject] = (),
 ) -> CgmesReport:
     """Write `objects` (and, by default, everything reachable) as a CGMES file set.
 
@@ -552,16 +657,20 @@ def write_cgmes(
     TP, SV). `out` is a directory (created when missing) or a ``.zip`` file. Each file is named
     by `file_name`, formatted with ``name``, ``keyword``, ``version`` and ``scenario``
     (``YYYYMMDDTHHMMZ``). Returns a `CgmesReport` (file names, model ids, headers, validation
-    issues, dropped values). See the module docstring for the conventions.
+    issues, dropped values). `boundary` lists the objects that belong to the equipment boundary
+    set (``CgmesDocument.boundary_objects`` of a read): with EQBD selected they are defined there
+    instead of in EQ. See the module docstring for the conventions.
     """
     docs, report = _build(
-        objects, profiles, header, include_reachable, validate, strict, profile_set
+        objects, profiles, header, include_reachable, validate, strict, profile_set, boundary
     )
     for kw, items in report.headers.items():
         scen = items["scenarioTime"].replace("-", "").replace(":", "")[:13] + "Z"
         report.files[kw] = file_name.format(
             name=name, keyword=kw, version=items["version"], scenario=scen
         )
+    if len(set(report.files.values())) != len(report.files):
+        raise ValueError(f"file_name {file_name!r} gives the same name to several profiles")
     target = Path(out)
     if target.suffix.lower() == ".zip":
         buf = io.BytesIO()
@@ -626,6 +735,7 @@ class CgmesDocument(CimDocument):
 
     headers: dict[str, CgmesFileHeader] = field(default_factory=dict)  # file name -> header
     profile_set: ProfileSet | None = None
+    boundary_objects: list[CimObject] = field(default_factory=list)  # defined in an EQBD file
 
     @property
     def profiles(self) -> tuple[str, ...]:
@@ -647,8 +757,9 @@ class CgmesDocument(CimDocument):
         """A `CgmesHeader` that makes `write_cgmes` reproduce this set's headers: model ids,
         DependentOn / Supersedes, times, description, version and the profile URIs. Uses the
         first file of each profile, and the file's first profile as its keyword (a file with EQ
-        and SC URIs gives ``profile_uris["EQ"]=[SC uri]``). Pass ``profiles=`` explicitly when
-        writing; automatic dependencies are switched off."""
+        and SC URIs gives ``combine["EQ"]=["SC"]``, so selecting EQ and SC writes both into one
+        file again). Pass ``profiles=`` explicitly when writing; automatic dependencies are
+        switched off."""
         by_kw: dict[str, CgmesFileHeader] = {}
         for h in self.headers.values():
             if h.profiles and h.profiles[0] not in by_kw:
@@ -664,6 +775,7 @@ class CgmesDocument(CimDocument):
             "version": (base.version if base else None) or "1",
         }
         model_ids: dict[str, str] = {}
+        combine: dict[str, list[str]] = {}
         dep: dict[str, list[str]] = {}
         sup: dict[str, list[str]] = {}
         uris: dict[str, list[str]] = {}
@@ -674,7 +786,10 @@ class CgmesDocument(CimDocument):
             dep[kw] = list(h.dependent_on)
             sup[kw] = list(h.supersedes)
             own = pset.by_keyword(kw).uri if pset is not None else None
-            uris[kw] = [u for u in h.profile_uris if u != own]
+            if len(h.profiles) > 1:
+                combine[kw] = list(h.profiles[1:])
+            known = {pset.by_keyword(k).uri for k in h.profiles} if pset is not None else {own}
+            uris[kw] = [u for u in h.profile_uris if u not in known]
             diff = {
                 k: v
                 for k, v in {
@@ -700,6 +815,7 @@ class CgmesDocument(CimDocument):
             profile_uris=uris,
             overrides=overrides,
             auto_dependencies=False,
+            combine=combine,
         )
 
 
@@ -804,6 +920,7 @@ class _CgmesReader(_Reader):
         self._gaps: set[str] = set()
         self._profiles: tuple[Profile, ...] = ()
         self._el_cls: type | None = None
+        self._file = ""
 
     # -- headers --------------------------------------------------------------------
 
@@ -864,6 +981,8 @@ class _CgmesReader(_Reader):
 
     def read_files(self, files: list[tuple[str, ET.Element]]) -> CgmesDocument:
         doc = self.cdoc
+        if not files:
+            self.warn("no XML files found in the source")
         by_key: dict[str, list[_Entry]] = {}
         for name, root in files:
             if root.tag != _RDF_ROOT:
@@ -901,12 +1020,15 @@ class _CgmesReader(_Reader):
                 setattr(obj, attr, None)
             doc.by_id[key] = obj
             doc.objects.append(obj)
+            if any(e.defines and any(p.keyword == _BOUNDARY for p in e.profiles) for e in entries):
+                doc.boundary_objects.append(obj)
         # -- properties --------------------------------------------------------------
         for key, entries in by_key.items():
             obj = doc.by_id[key]
             for e in entries:
                 self._profiles = e.profiles
                 self._el_cls = e.cls
+                self._file = e.file
                 self._apply(obj, e.el, reset=False)
         self._check_mrids()
         self.finish()
@@ -962,6 +1084,37 @@ class _CgmesReader(_Reader):
                 )
         return cls
 
+    # -- conflicting values ------------------------------------------------------------
+
+    def _set_attr(self, obj: CimObject, spec: AttrSpec, value: Any) -> None:
+        old = None if spec.is_id else getattr(obj, spec.name, None)  # mRID: see _check_mrids
+        if old is not None and _encoded(old) != _encoded(value):
+            self.warn(
+                f"{self._file}: {type(obj).__name__} {_ident(obj)!r}: {spec.prop} is {value!r} "
+                f"here, {old!r} in an earlier element; the later one is kept"
+            )
+        super()._set_attr(obj, spec, value)
+
+    def _set_link(self, obj: CimObject, spec: EndSpec, target: CimObject) -> None:
+        if spec.many:
+            inv = spec.desc.inverse  # type: ignore[attr-defined]
+            old = None if inv.meta.many else inv.__get__(target)
+            if old is not None and old is not obj:
+                self.warn(
+                    f"{self._file}: {type(target).__name__} {_ident(target)!r}: {inv.meta.name} "
+                    f"is {_ident(obj)!r} here, {_ident(old)!r} in an earlier element; "
+                    f"the later one is kept"
+                )
+        else:
+            old = getattr(obj, spec.name, None)
+            if old is not None and old is not target:
+                self.warn(
+                    f"{self._file}: {type(obj).__name__} {_ident(obj)!r}: {spec.prop} is "
+                    f"{_ident(target)!r} here, {_ident(old)!r} in an earlier element; "
+                    f"the later one is kept"
+                )
+        super()._set_link(obj, spec, target)
+
     # -- property classification ------------------------------------------------------
 
     def _spec_for(self, plan: ClassPlan, prop: str) -> AttrSpec | EndSpec | None:
@@ -992,6 +1145,14 @@ class _CgmesReader(_Reader):
         if spec is None:
             self.warn(f"unknown property {prop!r} on {plan.cim_name}")
         return spec
+
+
+def _encoded(value: Any) -> Any:
+    return encode_value(value) if isinstance(value, CimCompound) else value
+
+
+def _ident(obj: CimObject) -> str:
+    return str(getattr(obj, "mrid", None) or type(obj).__name__)
 
 
 def _profile_set(profile_set: Any) -> ProfileSet:

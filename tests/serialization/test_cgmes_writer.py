@@ -411,3 +411,92 @@ def test_conforms_to_sample_structure(kw: str, docs: dict[str, str]) -> None:
             r = child.get(f"{RDF}resource")
             if r is not None and not r.startswith("http"):
                 assert r.startswith("#_")
+
+
+# --------------------------------------------------------------------------------------
+# R2: one defining file per object (EQ / EQBD), several profiles in one file
+# --------------------------------------------------------------------------------------
+
+
+def _count_defs(root: ET.Element, ident: str) -> int:
+    return sum(1 for el in root[1:] if _id(el) == ident and el.get(f"{RDF}ID") is not None)
+
+
+@pytest.mark.filterwarnings("ignore:CGMES export")
+def test_eq_and_eqbd_define_each_object_once(net: dict[str, c.CimObject]) -> None:
+    objs = list(net.values())
+    bv = net["bv"]
+    docs = to_cgmes_strings(objs, profiles=("EQBD", "EQ", "SSH", "TP", "SV"), header=HEADER)
+    eq, bd = ET.fromstring(docs["EQ"]), ET.fromstring(docs["EQBD"])
+    assert _count_defs(eq, bv.mrid) == 1 and _find(bd, bv.mrid) is None  # type: ignore[attr-defined]
+    assert len(bd) == 1  # header only: nothing is a boundary object unless the caller says so
+    for cls in ("BaseVoltage", "VoltageLevel", "Terminal", "ConnectivityNode"):
+        ids_eq = {_id(e) for e in eq[1:] if e.tag == CIM + cls and e.get(f"{RDF}ID")}
+        ids_bd = {_id(e) for e in bd[1:] if e.tag == CIM + cls and e.get(f"{RDF}ID")}
+        assert not ids_eq & ids_bd
+
+    # the caller says which objects are boundary objects: they are defined in EQBD only
+    cn = net["cn0"]
+    docs = to_cgmes_strings(objs, profiles=("EQ", "EQBD"), header=HEADER, boundary=[bv, cn],
+                            validate=False)  # fmt: skip
+    eq, bd = ET.fromstring(docs["EQ"]), ET.fromstring(docs["EQBD"])
+    for o in (bv, cn):
+        assert _count_defs(bd, o.mrid) == 1 and _find(eq, o.mrid) is None  # type: ignore[attr-defined]
+    el = _find(bd, bv.mrid)  # type: ignore[attr-defined]
+    assert el is not None and el.find(f"{CIM}BaseVoltage.nominalVoltage") is not None
+    assert el.find(f"{CIM}IdentifiedObject.mRID") is not None
+    # others stay in EQ; references to the boundary objects are unchanged
+    assert _count_defs(eq, net["vl"].mrid) == 1  # type: ignore[attr-defined]
+    ref = _find(eq, net["vl"].mrid).find(f"{CIM}VoltageLevel.BaseVoltage")  # type: ignore[union-attr]
+    assert ref.get(f"{RDF}resource") == f"#_{bv.mrid}"  # type: ignore[attr-defined,union-attr]
+    # EQBD alone defines everything it can
+    only = to_cgmes_strings(objs, profiles=("EQBD",), header=HEADER, validate=False)
+    assert _count_defs(ET.fromstring(only["EQBD"]), bv.mrid) == 1  # type: ignore[attr-defined]
+
+
+@pytest.mark.filterwarnings("ignore:CGMES export")
+def test_combine_writes_profiles_into_one_file() -> None:
+    net = build_cgmes()  # not the shared fixture: it is modified
+    line = net["line"]
+    assert isinstance(line, c.ACLineSegment)
+    line.r0, line.x0, line.b0ch = 3.0, 30.0, 2e-5
+    if True:
+        sep = to_cgmes_strings(list(net.values()), profiles=("EQ", "SC", "SSH"), header=HEADER)
+        assert set(sep) == {"EQ", "SC", "SSH"}
+        one = to_cgmes_strings(
+            list(net.values()), profiles=("EQ", "SC", "SSH"),
+            header=CgmesHeader(**{**HEADER.__dict__, "combine": {"EQ": ["SC"]}}),
+        )  # fmt: skip
+        assert set(one) == {"EQ", "SSH"}
+        root = ET.fromstring(one["EQ"])
+        uris = [e.text for e in root[0].findall(f"{MD}Model.profile")]
+        assert uris == [cgmes3.EQ.uri, cgmes3.SC.uri]
+        el = _find(root, line.mrid)  # type: ignore[attr-defined]
+        assert el is not None and el.get(f"{RDF}ID")
+        assert [e for e in root[1:] if _id(e) == line.mrid] == [el]  # type: ignore[attr-defined]
+        assert el.find(f"{CIM}ACLineSegment.r0").text == "3.0"  # type: ignore[union-attr]
+        assert el.find(f"{CIM}ACLineSegment.r") is not None and el.find(f"{CIM}IdentifiedObject.mRID") is not None
+        # every value of the separate files is in the combined file
+        def values(roots: list[ET.Element]) -> collections.Counter[tuple[str, str]]:
+            return collections.Counter(
+                (_id(e), c_.tag + (c_.text or c_.get(f"{RDF}resource") or ""))
+                for r in roots for e in r[1:] for c_ in e
+            )  # fmt: skip
+        assert values([ET.fromstring(sep[k]) for k in sep]) == values(
+            [ET.fromstring(one[k]) for k in one]
+        )
+        # SSH depends on EQ as before; a guest that is not selected is ignored
+        assert ET.fromstring(one["SSH"])[0].find(f"{MD}Model.DependentOn").get(f"{RDF}resource") == (  # type: ignore[union-attr]
+            ET.fromstring(one["EQ"])[0].get(f"{RDF}about")
+        )
+        plain = to_cgmes_strings(list(net.values()), profiles=("EQ",), validate=False,
+                                 header=CgmesHeader(combine={"EQ": ["SC"]}))  # fmt: skip
+        assert list(plain) == ["EQ"]
+        with pytest.raises(ValueError, match="combine"):
+            to_cgmes_strings(list(net.values()), profiles=("SC",), header=CgmesHeader(combine={"EQ": ["SC"]}))
+
+
+def test_file_names_must_differ(net: dict[str, c.CimObject], tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="same name"):
+        write_cgmes(list(net.values()), tmp_path, header=HEADER, file_name="{name}.xml")
+    assert list(tmp_path.iterdir()) == []

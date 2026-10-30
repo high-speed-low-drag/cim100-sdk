@@ -584,3 +584,106 @@ def test_full_microgrid(full_samples: dict[str, Path], tmp_path: Path) -> None:
         assert dump(back.objects) == dump(src.objects), label
         assert back.dangling == []  # a reference to an unknown object cannot be written
         assert all("dangling" in w or w.startswith("Line '54a2") for w in back.warnings)
+
+    # the boundary set is written back as its own EQBD file, each object defined exactly once
+    bd_ids = {
+        el.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}ID")
+        for f in full_samples["BD"]  # type: ignore[union-attr]
+        for el in ET.parse(f).getroot()[1:]
+    }
+    src = read_cgmes(_total(full_samples, "BE", "BD"))
+    assert {"_" + o.mrid for o in src.boundary_objects} == bd_ids  # type: ignore[attr-defined]
+    out = tmp_path / "bd"
+    with pytest.warns(UserWarning, match="CGMES export"):
+        write_cgmes(
+            src.objects, out, profiles=[*profiles, "EQBD"], header=src.header_for_rewrite(),
+            boundary=src.boundary_objects, include_reachable=False,
+        )  # fmt: skip
+    back = read_cgmes(out)
+    assert dump(back.objects) == dump(src.objects)
+    assert {"_" + o.mrid for o in back.boundary_objects} == bd_ids  # type: ignore[attr-defined]
+    assert all(w.startswith("Line '54a2") for w in back.warnings), back.warnings
+
+
+# --------------------------------------------------------------------------------------
+# R2: boundary objects, files with several profiles, conflicting values
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.filterwarnings("ignore:CGMES export")
+def test_boundary_objects_round_trip(tmp_path: Path) -> None:
+    net = build_cgmes()
+    bv, cn = net["bv"], net["cn0"]
+    objs = list(net.values())
+    profiles = ("EQ", "EQBD", "SSH", "TP", "SV")
+    write_cgmes(objs, tmp_path, profiles=profiles, header=HEADER, boundary=[bv, cn])
+    doc = read_cgmes(tmp_path)
+    assert doc.warnings == [], doc.warnings  # no "defined more than once"
+    assert doc.boundary_objects == [doc.by_id[bv.mrid], doc.by_id[cn.mrid]]  # type: ignore[attr-defined]
+    assert "EQBD" in doc.profiles
+    # and back again: same files
+    again = tmp_path / "again"
+    write_cgmes(doc.objects, again, profiles=profiles, header=doc.header_for_rewrite(),
+                boundary=doc.boundary_objects, include_reachable=False)  # fmt: skip
+    for f in tmp_path.glob("*.xml"):
+        assert (again / f.name).read_text("utf-8") == f.read_text("utf-8"), f.name
+
+
+@pytest.mark.filterwarnings("ignore:CGMES export")
+def test_file_with_two_profiles_survives_rewrite(tmp_path: Path) -> None:
+    net = build_cgmes()
+    line = net["line"]
+    assert isinstance(line, c.ACLineSegment)
+    line.r0, line.x0 = 3.0, 30.0
+    hdr = CgmesHeader(**{**HEADER.__dict__, "combine": {"EQ": ["SC"]}})
+    write_cgmes(list(net.values()), tmp_path, profiles=("EQ", "SC", "SSH", "TP", "SV"), header=hdr)
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(f"model_{k}.xml" for k in KWS)
+    doc = read_cgmes(tmp_path)
+    assert doc.warnings == [] and "SC" in doc.profiles
+    assert doc.by_id[line.mrid].r0 == 3.0  # type: ignore[attr-defined]
+    assert doc.header_for_rewrite().combine == {"EQ": ["SC"]}
+    again = tmp_path / "again"
+    write_cgmes(doc.objects, again, profiles=("EQ", "SC", "SSH", "TP", "SV"), include_reachable=False,
+                header=doc.header_for_rewrite())  # fmt: skip
+    assert sorted(p.name for p in again.iterdir()) == sorted(f"model_{k}.xml" for k in KWS)
+    assert dump(read_cgmes(again).objects) == dump(doc.objects)
+    for f in tmp_path.glob("*.xml"):
+        assert (again / f.name).read_text("utf-8") == f.read_text("utf-8"), f.name
+
+
+def test_conflicting_values_across_files_warn() -> None:
+    ssh2 = xml(
+        [cgmes3.SSH.uri],
+        f'<cim:Equipment rdf:about="#_{LINE}"><cim:Equipment.inService>true</cim:Equipment.inService></cim:Equipment>',
+    )
+    files = {**_three(), "ssh2.xml": ssh2}
+    doc = read_cgmes(files)
+    assert len(doc.warnings) == 1
+    assert "ssh2.xml" in doc.warnings[0] and "Equipment.inService" in doc.warnings[0]
+    assert doc.by_id[LINE].in_service is True  # type: ignore[attr-defined]  # the later file wins
+    with pytest.raises(CgmesReadError, match="Equipment.inService"):
+        read_cgmes(files, strict=True)
+    # the same value twice is not a conflict, and neither is a repeated reference
+    same = xml(
+        [cgmes3.SSH.uri],
+        f'<cim:Equipment rdf:about="#_{LINE}"><cim:Equipment.inService>false</cim:Equipment.inService></cim:Equipment>',
+    )
+    assert read_cgmes({**_three(), "ssh2.xml": same}).warnings == []
+    eq2 = xml([cgmes3.EQ.uri], f'<cim:Terminal rdf:about="#_{TERM}"><cim:Terminal.ConductingEquipment rdf:resource="#_{LINE}"/></cim:Terminal>')
+    doc = read_cgmes({**_three(), "eq2.xml": eq2})
+    assert not any("earlier element" in w for w in doc.warnings)
+
+    # a single-valued reference and the single-valued opposite end of a many end
+    other = "bbbbbbbb-0000-0000-0000-000000000099"
+    eq3 = xml([cgmes3.EQ.uri], f'<cim:ACLineSegment rdf:ID="_{other}"/>'
+              f'<cim:Terminal rdf:about="#_{TERM}"><cim:Terminal.ConductingEquipment rdf:resource="#_{other}"/></cim:Terminal>')
+    doc = read_cgmes({**_three(), "eq3.xml": eq3})
+    assert any("Terminal.ConductingEquipment" in w for w in doc.warnings), doc.warnings
+    assert doc.by_id[TERM].conducting_equipment is doc.by_id[other]  # type: ignore[attr-defined]
+
+
+def test_empty_source_warns(tmp_path: Path) -> None:
+    doc = read_cgmes(tmp_path)  # an empty directory
+    assert doc.objects == [] and doc.warnings == ["no XML files found in the source"]
+    with pytest.raises(CgmesReadError, match="no XML files"):
+        read_cgmes([], strict=True)

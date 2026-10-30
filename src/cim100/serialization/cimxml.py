@@ -345,7 +345,16 @@ class _Reader(ReaderBase):
                 continue
             value = self._value(child, spec, f"{plan.cim_name}: {prop}")
             if value is not None:
-                setattr(obj, spec.name, value)
+                self._set_attr(obj, spec, value)
+
+    def _set_attr(self, obj: CimObject, spec: AttrSpec, value: Any) -> None:
+        setattr(obj, spec.name, value)
+
+    def _set_link(self, obj: CimObject, spec: EndSpec, target: CimObject) -> None:
+        if spec.many:
+            spec.desc.add(obj, target)  # type: ignore[attr-defined]
+        else:
+            setattr(obj, spec.name, target)
 
     def _link(self, obj: CimObject, spec: EndSpec, child: ET.Element, src: str) -> None:
         ref = child.get(_RDF_RESOURCE) or child.get(_RDF_NODE_ID)
@@ -358,10 +367,7 @@ class _Reader(ReaderBase):
             self.warn(f"dangling reference in {spec.prop}")
             return
         try:
-            if spec.many:
-                spec.desc.add(obj, target)  # type: ignore[attr-defined]
-            else:
-                setattr(obj, spec.name, target)
+            self._set_link(obj, spec, target)
         except TypeError as e:
             self.warn(f"cannot link {spec.prop}: {e}")
 
