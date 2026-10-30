@@ -118,7 +118,7 @@ if no agent is running any more, check `git log` and the working tree for its WI
 | C1 | OWL reader + profile snapshot | done | 5c866cf |
 | C2 | European extensions | done | d5cbb30 |
 | R1 | Review C1+C2 | done | 87f58c4 |
-| C3 | Profile API + validate_profile | todo | |
+| C3 | Profile API + validate_profile | running | |
 | C4 | CGMES writer | todo | |
 | C5 | CGMES reader + samples | todo | |
 | R2 | Review C3–C5 | todo | |
