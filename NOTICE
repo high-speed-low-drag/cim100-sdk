@@ -20,9 +20,7 @@ cimug-org/CGMES-CIM17 (https://github.com/cimug-org/CGMES-CIM17, Apache-2.0, com
 redistributed here; tools/fetch_profiles.py downloads them from their pinned public source. Profile
 URIs and versions follow the ENTSO-E vocabularies in entsoe/CGMES-AP (Apache-2.0).
 
-tests/serialization/data/cgmes3_microgrid_be/ contains excerpts of the ENTSO-E CGMES 3.0 Conformity
-Assessment Test Configuration (MicroGrid BaseCase, BE, v3.0.2). The test configuration is owned by
-ENTSO-E and is provided by ENTSO-E "as it is"; any use of the model shall include a reference to
-ENTSO-E (see the md:Model.description in each file). The excerpts are used only to test the CGMES
-writer and reader and are not part of the distributed package.
+No ENTSO-E test data is redistributed. The opt-in test of the ENTSO-E CGMES 3.0 Conformity
+Assessment Test Configuration (MicroGrid BaseCase v3.0.2, owned by ENTSO-E) downloads the files from
+a pinned public copy and checks their sha256 at test time.
 

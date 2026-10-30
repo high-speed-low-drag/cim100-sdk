@@ -27,7 +27,7 @@ RDF = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
 MD = "{http://iec.ch/TC57/61970-552/ModelDescription/1#}"
 CIM = "{" + CIM_NS + "}"
 EU = "{" + EU_NS + "}"
-SAMPLES = Path(__file__).parent / "data" / "cgmes3_microgrid_be"
+FIXTURE = Path(__file__).parent / "data" / "cgmes3_fixture"
 KWS = ("EQ", "SSH", "TP", "SV")
 MODEL_IDS = {kw: f"0000000{i}-1111-2222-3333-444444444444" for i, kw in enumerate(KWS)}
 HEADER = CgmesHeader(
@@ -359,12 +359,12 @@ def test_element_class_and_validation_via_ancestor(net: dict[str, c.CimObject]) 
 
 
 # --------------------------------------------------------------------------------------
-# conformance with the ENTSO-E CGMES 3.0 MicroGrid sample excerpt
+# conformance with the hand-written CGMES 3.0 fixture (the sample file conventions)
 # --------------------------------------------------------------------------------------
 
 
 def _sample(kw: str) -> tuple[str, ET.Element]:
-    path = next(SAMPLES.glob(f"*_BE_{kw}_001.xml"))
+    path = FIXTURE / f"fixture_{kw}.xml"
     text = path.read_text("utf-8")
     return text, ET.fromstring(text)
 
@@ -398,7 +398,7 @@ def test_conforms_to_sample_structure(kw: str, docs: dict[str, str]) -> None:
     sample_style = {el.tag: _id_style(el) for el in sample[1:]}
     our_style = {el.tag: _id_style(el) for el in ours[1:]}
     common = set(sample_style) & set(our_style)
-    assert common  # the excerpt and our network share classes
+    assert common  # the fixture and our network share classes
     for tag in common:
         assert our_style[tag] == sample_style[tag], tag
     # every sample property is a property of the profiles the sample header names for that

@@ -78,13 +78,17 @@ These are ordered by how much they matter.
 4. **Generated ids.** Classes without an mRID (Sv*, CurveData, PositionPoint, DiagramObjectPoint)
    are written as `_gen<N>`. These are not UUIDs and not stable across a read and re-write.
    Deterministic UUIDv5 ids would fix it.
-5. **ENTSO-E excerpt in tests.** `tests/serialization/data/cgmes3_microgrid_be/` has 4 small
-   excerpt files (about 14 KB) of the ENTSO-E MicroGrid sample. They keep ENTSO-E's attribution
-   and terms, and NOTICE credits ENTSO-E. Confirm you're happy to keep them in an Apache-2.0
-   repo, or I'll replace them with a hand-written fixture.
-6. **Known SDK gaps.** `VsConverter.uf` (SV) and `Simple_Float` are in CIM17-2 but not in the CIM100
-   model, so they are warned about and dropped. About 15 stale CIM15 properties in the ShortCircuit
-   OWL are ignored. The Dynamics profile is empty in the source.
+5. **ENTSO-E excerpt in tests: replaced.** The tests use a hand-written fixture
+   (`tests/serialization/data/cgmes3_fixture/`); ENTSO-E files are only downloaded by the opt-in
+   test, with sha256 checks.
+6. **Not SDK gaps after all: errors in the CIMTool OWL.** The SDK model is CIM17
+   (IEC61970CIM17v40, the same version as the CGMES-CIM17 EA model; "CIM100" is the namespace
+   name used from CIM17 on). Compared with the official ENTSO-E RDFS, the OWL-derived snapshot has
+   4 extra properties and nothing missing: `VsConverter.uf` (SV), the stale
+   `cim15:SynchronousMachine.GeneratingUnit` (SC) and `BasicIntervalSchedule.value1Multiplier` /
+   `value2Multiplier` (EQ). `Simple_Float` is an OWL-only datatype name; the RDFS says `Float`.
+   The Dynamics OWL is empty; the CGMES-CIM17 EA copy has a newer Dynamics package (217 more
+   classes) than the published CIM17v40, which no CGMES 3.0 profile uses.
 7. **Smaller items:**
    - **Header defaults:** the default modelling authority set is a placeholder
      (`http://cim100-sdk.invalid/...`). DependentOn follows the samples' chain

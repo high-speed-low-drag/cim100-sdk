@@ -352,10 +352,7 @@ OWL files are not committed (`tools/fetch_profiles.py` downloads them); the deri
 same repository's EA model (`ExtEuBase` package). Profile URIs, keywords and versions are those of
 the ENTSO-E vocabularies in `entsoe/CGMES-AP` (Apache-2.0).
 
-`tests/serialization/data/cgmes3_microgrid_be/` holds a few elements of each of the EQ, SSH, TP and
-SV files of the **ENTSO-E CGMES 3.0 Conformity Assessment Test Configuration MicroGrid BaseCase
-(BE, v3.0.2)**, taken from the copy in `powsybl/powsybl-core`. The test configuration is owned by
-ENTSO-E and is provided "as it is"; ENTSO-E's terms (kept in each file's `md:Model.description`)
-require that any use of the model includes a reference to ENTSO-E, and ENTSO-E's web site is the
-only official source of information on it. The excerpts are test data only and are not part of the
-installed package.
+`tests/serialization/data/cgmes3_fixture/` is a hand-written CGMES 3.0 file set (made-up content
+in the layout of the CGMES files). No ENTSO-E data is committed: the ENTSO-E CGMES 3.0 Conformity
+Assessment MicroGrid BaseCase (v3.0.2, owned by ENTSO-E) is only downloaded, from a pinned copy in
+`powsybl/powsybl-core` with sha256 checks, by the opt-in test (`CIM100_CGMES_DOWNLOAD=1`).

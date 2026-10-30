@@ -30,7 +30,7 @@ from cim100.serialization import (
 from cim100.serialization._common import canonical_dump
 from tests.serialization.cgmes_network import build_cgmes, uid
 
-SAMPLES = Path(__file__).parent / "data" / "cgmes3_microgrid_be"
+FIXTURE = Path(__file__).parent / "data" / "cgmes3_fixture"
 KWS = ("EQ", "SSH", "TP", "SV")
 MODEL_IDS = {kw: f"0000000{i}-1111-2222-3333-444444444444" for i, kw in enumerate(KWS)}
 HEADER = CgmesHeader(
@@ -128,51 +128,52 @@ def test_headers_and_rewrite(docs: dict[str, str]) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# the committed ENTSO-E excerpt
+# the committed hand-written fixture (the CGMES 3.0 file conventions, made-up content)
 # --------------------------------------------------------------------------------------
 
 
-def test_microgrid_excerpt() -> None:
-    doc = read_cgmes(SAMPLES)
+def test_fixture_file_set() -> None:
+    doc = read_cgmes(FIXTURE)
     assert len(doc.headers) == 4
-    eq, ssh, tp, sv = (next(h for n, h in doc.headers.items() if f"_{k}_" in n) for k in KWS)
+    eq, ssh, tp, sv = (doc.headers[f"fixture_{k}.xml"] for k in KWS)
     assert eq.profiles == ("EQ", "SC") and len(eq.profile_uris) == 2
     assert eq.profile_uris[0] == cgmes3.EQ.uri and eq.profile_uris[1] == cgmes3.SC.uri
-    assert eq.about == "urn:uuid:095c6b30-255d-40d5-85fe-2c9fe6c9846d"
-    assert eq.dependent_on == ("urn:uuid:536f9bf1-3f8f-a546-87e3-7af2272f29b7",)
+    assert eq.about == f"urn:uuid:{uid('fx-eq-model')}"
+    assert eq.dependent_on == (f"urn:uuid:{uid('fx-bd-model')}",)
     assert ssh.dependent_on == (eq.about,) and tp.dependent_on == (ssh.about,)
     assert sv.dependent_on == (tp.about,)
-    assert eq.version == "001" and eq.modeling_authority_set == "http://elia.be/CGMES"
-    assert eq.scenario_time == dt.datetime(2021, 3, 25, 15, 30, tzinfo=dt.UTC)
-    assert eq.created == dt.datetime(2021, 3, 25, 23, 16, 27, tzinfo=dt.UTC)
-    assert eq.description is not None and eq.description.startswith("CGMES Conformity")
+    assert eq.version == "001"
+    assert eq.modeling_authority_set == "http://example.com/cgmes-fixture"
+    assert eq.scenario_time == dt.datetime(2026, 2, 10, 9, 30, tzinfo=dt.UTC)
+    assert eq.created == dt.datetime(2026, 2, 10, 11, 5, 12, tzinfo=dt.UTC)
+    assert eq.description == "cim100-sdk hand-written CGMES 3.0 fixture"
     assert doc.profiles == ("EQ", "SSH", "TP", "SV", "SC")
     assert doc.headers_by_profile["SC"] == [eq]
 
     # merged across files: EQ defines the terminal, TP describes it
-    term = doc.by_id["62fc0a4e-00aa-4bf7-b1a0-3a5b2c0b5492"]
+    term = doc.by_id[uid("fx-term")]
     assert isinstance(term, c.Terminal)
-    tn = doc.by_id["99b219f3-4593-428b-a4da-124a54630178"]
+    tn = doc.by_id[uid("fx-tn")]
     assert isinstance(tn, c.TopologicalNode) and term.topological_node is tn
-    cn = doc.by_id["bf851342-832e-4ea2-b2ad-b09729b3af23"]
+    cn = doc.by_id[uid("fx-cn")]
     assert isinstance(cn, c.ConnectivityNode) and cn.topological_node is tn  # TP rdf:about
-    line_id = "ffbabc27-1ccd-4fdc-b037-e341706c8d29"
-    line = doc.by_id[line_id]
-    assert isinstance(line, c.ACLineSegment) and line.mrid == line_id  # EQ rdf:ID
+    line = doc.by_id[uid("fx-line")]
+    assert isinstance(line, c.ACLineSegment) and line.mrid == uid("fx-line")  # EQ rdf:ID
     assert line.b0ch is not None  # ShortCircuit property in the EQ file
+    assert line.length == 42500.0  # km -> m
     # SSH-only descriptions: created once, as the class seen, with a warning
-    sm = doc.by_id["550ebe0d-f2b2-48c1-991f-cebea43a21aa"]
-    assert type(sm) is c.SynchronousMachine and sm.in_service is True and sm.p == -118e6  # MW -> W
-    eqp = doc.by_id["5caf27ed-d2f8-458a-834a-6b3193a982e6"]
+    sm = doc.by_id[uid("fx-gen")]
+    assert type(sm) is c.SynchronousMachine and sm.in_service is True and sm.p == -85.5e6  # MW -> W
+    eqp = doc.by_id[uid("fx-busbar")]
     assert type(eqp) is c.Equipment and eqp.in_service is True
     assert any("only described" in w and "Equipment" in w for w in doc.warnings)
     # the terminal's equipment is a plain Equipment: not a ConductingEquipment
     assert any("cannot link Terminal.ConductingEquipment" in w for w in doc.warnings)
-    # the excerpt has a few elements only: references to everything else dangle
+    # the fixture has a few elements only: references to everything else dangle
     assert doc.dangling and {d[1] for d in doc.dangling} >= {"TopologicalNode.BaseVoltage"}
     assert not any("unknown" in w or "not in profile" in w for w in doc.warnings)
     with pytest.raises(CgmesReadError):
-        read_cgmes(SAMPLES, strict=True)
+        read_cgmes(FIXTURE, strict=True)
 
 
 # --------------------------------------------------------------------------------------
@@ -449,7 +450,7 @@ def test_errors(tmp_path: Path) -> None:
 
 
 def test_read_cimxml_unchanged_by_the_refactor() -> None:
-    doc = read_cimxml(SAMPLES / "20210325T1530Z_1D_BE_SSH_001.xml")
+    doc = read_cimxml(FIXTURE / "fixture_SSH.xml")
     # one file alone: the SSH rdf:about elements are stubs of the element's class
     assert {type(o).__name__ for o in doc.objects} == {
         "Terminal",
