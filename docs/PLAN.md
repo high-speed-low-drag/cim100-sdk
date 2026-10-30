@@ -107,3 +107,71 @@ Michael approved the recommendations and asked for JSON as an extra step.
 | S2 | CIM JSON-LD writer and reader `cim100.serialization.jsonld`, reusing that layer, with round-trip tests and CIMXML↔JSON-LD equivalence | sdk | sonnet |
 | S3 | Excel→CIM builder for the 4 networks, with count tests against the sheets | networks | opus |
 | S4 | Export the 4 networks to .xml and .jsonld, round-trip them, and write a summary report | networks | sonnet |
+
+# Phase 3: CGMES 3.0 profiles (2026-10-31)
+
+## Goal
+Choose a CGMES 3.0 profile (EQ, SSH, TP, SV, ...) and use the existing `cim100` classes within it:
+discover which classes and properties the profile has, validate a network against it, and write and
+read CGMES file sets (one CIMXML file per profile, with `md:FullModel` headers) that other CGMES
+tools accept. Objects stay ordinary `cim100` objects; profiles are a view, not a second class tree.
+
+## Source
+- `cimug-org/CGMES-CIM17` (Apache-2.0), commit `1c7708f5d3bde53e154201707f31961573868cf2`,
+  `CGMES-CIM17/Profiles/*.owl` (CIMTool RDFS/OWL for IEC 61970-600-2:2021, i.e. CGMES 3.0).
+- Pinned like the EA model: `profile-source.toml` (commit + per-file sha256), fetched into
+  `build/profiles/` (gitignored). The derived profile snapshot is committed so tests run offline.
+
+## Facts from the investigation (2026-10-31)
+- CGMES 3.0 uses the namespace `http://iec.ch/TC57/CIM100#`, the same as this SDK.
+- Every CIM100 class referenced by the 10 OWL files exists in the SDK. Every CIM100 property in
+  EQ, TP, SSH, OP, GL and DL exists. Gaps: `VsConverter.uf` (SV), `Simple_Float.value` (SV, SSH).
+  The ShortCircuit OWL carries about 15 stale CIM15/16 properties
+  (e.g. `PhaseTapChanger.TransformerWinding`, namespace `.../2010/CIM-schema-cim15`): a defect in
+  the source; report them as known source gaps, do not model them.
+- European extensions, namespace `http://iec.ch/TC57/CIM100-European#` (`eu:`), are not in the SDK:
+  classes `BoundaryPoint`, `WindPowerPlant`, `SolarPowerPlant`, enum `LimitKind`; properties
+  `IdentifiedObject.shortName`, `IdentifiedObject.energyIdentCodeEic`, `OperationalLimitType.kind`,
+  `WindGeneratingUnit.WindPowerPlant`, `SolarGeneratingUnit.SolarPowerPlant`, `BoundaryPoint.*`.
+  EQ, EQBD and TP use them.
+- The Dynamics OWL is empty (the source README says it is unfinished). Skip DY.
+- OWL facts: the ontology header has only label/comment (no keyword, no conformsTo URI, no version);
+  `xml:base` is `http://ucaiug.org/ns/CGMES/<Name>-EU/3.0`. Properties are `owl:Restriction`s on
+  `rdfs:subClassOf` blank nodes (`owl:onProperty` + `owl:minCardinality`/`maxCardinality`/
+  `allValuesFrom`); stereotypes via `uml:hasStereotype` (`concrete`, `byreference`, `european`,
+  `attribute`, `enumeration`, ...). Profile classes are `#<Name>` subclassing `cim:<Name>`.
+- Profile keywords and `dcterms:conformsTo`/`md:Model.profile` URIs (e.g.
+  `http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0`) are not in the OWL; take them from
+  IEC 61970-600-2 / ENTSO-E CGMES 3.0 sample files and record the source.
+
+## Decisions (Michael approved the recommended design on 2026-10-31 and gave autonomy to finish)
+1. Profile layer over the existing classes (not narrowed per-profile classes).
+2. Profiles in scope: EQ, SSH, TP, SV first; then OP, SC, GL, DL, EQBD. DY skipped.
+3. European extensions become real model members via codegen (an extension input merged into the
+   IR), with a per-class/per-property namespace in the metadata, written with the `eu:` prefix.
+4. Missing CIM17-2 members (`VsConverter.uf`, `Simple_Float.value`) and stale SC properties are
+   recorded as known gaps, not modelled.
+5. External check: ENTSO-E/powsybl CGMES 3.0 sample models must read; our output should import in
+   pypowsybl (installed only in a scratch venv, never a project dependency).
+6. Work is committed locally on `claude/cgmes-profile-support-1be5ef`, one commit per milestone.
+   Nothing is pushed and no PR is opened without Michael.
+
+## Milestones (one agent and one commit each, in order)
+| # | Work | Model |
+|---|---|---|
+| C1 | `profile-source.toml`, `tools/fetch_profiles.py`, `codegen/owl_reader.py`, `tools/dump_profiles.py [--check]` writing the committed snapshot `src/cim100/profiles/data/cgmes_3_0.json` (per profile: keyword, name, base URI, conformsTo URI, classes with namespace/concrete flag, properties with namespace, kind, min/max, range/target, enum literals). Gap report vs the SDK pinned in tests. | opus |
+| C2 | European extensions: extension input for codegen (from the snapshot's `eu:` members), namespace in `ClassMeta`/`AttrMeta`/`EndMeta`, regenerated model, CIMXML and JSON-LD writing/reading `eu:` names. Existing tests stay green; `regen.py --check` clean. | opus |
+| R1 | Review C1+C2 (correctness, regen determinism, serializer namespace handling); orchestrator applies or delegates fixes. | sonnet |
+| C3 | `cim100.profiles` runtime API: `Profile`/`ProfileSet`, `cgmes3.EQ` etc., `classes`, `properties(cls)`, `required(cls)`, `profiles_of(cls, prop)`; `cim100.profiles.cgmes3` facade re-exporting in-profile classes (with a generated `.pyi` for IDEs); `validate_profile(objects, profiles)` (class not in profile, property outside profiles, minCardinality, enum literal, concrete class). | sonnet |
+| C4 | CGMES writer `write_cgmes(objects, out, profiles=..., header=...)`: one file per profile, `md:FullModel` header (created, scenarioTime, modelingAuthoritySet, profile URI, DependentOn, ...), only that profile's properties, `rdf:ID` in the defining profile and `rdf:about` elsewhere, `IdentifiedObject.mRID` written where the profile has it, associations written in the profile's direction, `eu:` namespace. Conventions verified against real CGMES 3.0 samples. | opus |
+| C5 | CGMES reader `read_cgmes(paths or zip)`: merge a file set into one graph, cross-file references, headers kept, profile-aware warnings. Round trip of C4 output; ENTSO-E/powsybl CGMES 3.0 MicroGrid/MiniGrid samples read without unknown-property warnings beyond documented gaps. | sonnet |
+| R2 | Review C3–C5 against the samples and the spec conventions; fixes. | sonnet |
+| C6 | Example: export the four MV networks as CGMES 3.0 EQ/SSH/TP (SV only if values exist; TopologicalNodes derived from ConnectivityNodes), `validate_profile` clean, round trip, pypowsybl import if feasible; README sections for profiles and CGMES I/O. | sonnet |
+| F | Orchestrator: full tests, ruff, regen checks, `docs/CGMES_REPORT.md` for Michael. | orchestrator |
+
+## Orchestration
+- The orchestrator (main session) runs each milestone as a background subagent with a self-contained
+  brief, verifies the commit (tests, ruff, `regen.py --check`), records it in `docs/PROGRESS.md`,
+  then starts the next. A failed or cut-off agent is retried once from its WIP state; a second
+  failure is recorded as blocked and the next independent milestone continues.
+- Usage limits: a session cron job resumes the orchestrator hourly from `docs/PROGRESS.md`.

@@ -108,3 +108,19 @@ Update it and commit it at the end of every milestone, and whenever a milestone 
 - S2 (sonnet): `cim100.serialization.jsonld` (`write_jsonld`, `to_jsonld_string`, `to_jsonld_dict`, `read_jsonld`, `CimJsonLdError`), following the DIGIN10 CIMJSON-LD convention (3lbits/CIM4NoUtility `Telemark-120/docs/CIMJSON-LD.adoc`; the Grunnprofil path in the brief has moved). `CimDocument` and the reader scaffolding moved to `_common`; test network moved to `tests/serialization/network.py`. S1 nits fixed: XML-invalid control characters raise ValueError, `\r` is written `&#13;`, `normalize_id` strips only a leading `#`/`urn:uuid:`/IRI base and non-NCName mrids use `rdf:about="#_<pct>"`, docstring counts, one roleless-end warning per end per call, warning text `Terminal: ACDCTerminal.sequenceNumber`.
 - S3 done: Excel to CIM builder for the four MV networks in ~/claude_code/cim100-networks (branch feat/builder, commit adc1934); 42 tests pass, validate() clean apart from instance_set.
 - S4 done: CIMXML and JSON-LD export of the four networks with round-trip verification in ~/claude_code/cim100-networks (branch feat/builder, commit e8e5319); all round trips equal, SDK unchanged.
+
+## Phase 3 (2026-10-31): CGMES 3.0 profiles. Plan in PLAN.md Phase 3
+Resume rule: the first milestone not marked done is next. "running" means an agent was started;
+if no agent is running any more, check `git log` and the working tree for its WIP, then retry once.
+
+| # | Work | Status | Commit |
+|---|---|---|---|
+| C1 | OWL reader + profile snapshot | todo | |
+| C2 | European extensions | todo | |
+| R1 | Review C1+C2 | todo | |
+| C3 | Profile API + validate_profile | todo | |
+| C4 | CGMES writer | todo | |
+| C5 | CGMES reader + samples | todo | |
+| R2 | Review C3–C5 | todo | |
+| C6 | MV example + README | todo | |
+| F | Final checks + report | todo | |
