@@ -39,6 +39,7 @@ from cim100.serialization._common import (
     NAMESPACES,
     AttrSpec,
     CimDocument,
+    ClassPlan,
     EndSpec,
     ReaderBase,
     assign_ids,
@@ -321,17 +322,23 @@ class _Reader(ReaderBase):
 
     # -- pass 2 ---------------------------------------------------------------------
 
-    def _apply(self, obj: CimObject, el: ET.Element) -> None:
+    def _spec_for(self, plan: ClassPlan, prop: str) -> AttrSpec | EndSpec | None:
+        """The attribute or end named by a property tag, or None (after a warning)."""
+        spec = plan.by_prop.get(prop)
+        if spec is None and prop not in plan.static_props:
+            self.warn(f"unknown property {prop!r} on {plan.cim_name}")
+        return spec
+
+    def _apply(self, obj: CimObject, el: ET.Element, *, reset: bool = True) -> None:
         plan = class_plan(type(obj))
-        for name in plan.defaulted:  # absent means unset, not "constructor default"
-            setattr(obj, name, None)
+        if reset:
+            for name in plan.defaulted:  # absent means unset, not "constructor default"
+                setattr(obj, name, None)
         src = el.get(_RDF_ID) or el.get(_RDF_ABOUT) or el.get(_RDF_NODE_ID) or ""
         for child in el:
             _, prop = _split(child.tag)
-            spec = plan.by_prop.get(prop)
+            spec = self._spec_for(plan, prop)
             if spec is None:
-                if prop not in plan.static_props:
-                    self.warn(f"unknown property {prop!r} on {plan.cim_name}")
                 continue
             if isinstance(spec, EndSpec):
                 self._link(obj, spec, child, normalize_id(src))

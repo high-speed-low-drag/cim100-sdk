@@ -69,6 +69,19 @@ Enumerations
     ``<scenarioTime>_<process>_<TSO>_<KEYWORD>_<version>.xml`` is available through
     ``file_name`` (fields ``name keyword version scenario``).
 
+Reading (`read_cgmes`)
+    A CGMES file set (directory, ``.zip``, paths, or ``(name, bytes)`` pairs) is merged into one
+    object graph (`CgmesDocument`). An ``rdf:ID`` element defines an object; ``rdf:about`` elements
+    in any other file describe the same object (merged by normalized id, whatever the file order).
+    An element whose class is an ancestor of the object's (SSH ``<cim:Equipment rdf:about=...>``)
+    only adds properties; it neither creates an object nor changes the defined class. An id that is
+    only described gets the most specific class seen (warning). ``mRID`` is the
+    ``IdentifiedObject.mRID`` element, else the id without its ``_``. Each file's ``md:FullModel``
+    is kept (`CgmesFileHeader`); the profiles named by its ``md:Model.profile`` URIs (unknown URIs
+    warn) classify the file's properties: not in the profile, or a known SDK gap
+    (``python_name`` None, e.g. ``VsConverter.uf``), is a warning. Non-strict readers collect
+    warnings and dangling references (checked after all files are merged); ``strict=True`` raises.
+
 Reporting
     Before writing, `validate_profile` runs against the selected profiles (``validate=True``).
     Every property value, link or object that no written file carries is listed in
@@ -86,6 +99,7 @@ import uuid
 import warnings
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -95,14 +109,27 @@ from cim100.profiles._validate import ProfileIssue, validate_profile
 from cim100.serialization._common import (
     CIM_NS,
     EU_NS,
+    AttrSpec,
+    CimDocument,
+    ClassPlan,
+    EndSpec,
     assign_ids,
     class_plan,
     collect,
+    normalize_id,
+    resolve_class,
 )
 from cim100.serialization.cimxml import (
+    _RDF_ABOUT,
+    _RDF_ID,
+    _RDF_NODE_ID,
+    _RDF_ROOT,
     MD_NS,
     RDF_NS,
+    CimXmlError,
+    _Reader,
     _serialize,
+    _split,
     _wire_ids,
     _write_value,
     _xml_text,
@@ -110,16 +137,20 @@ from cim100.serialization.cimxml import (
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Sequence
     from typing import Any
 
     from cim100.profiles._model import PropertyInfo
 
 __all__ = [
     "DEFAULT_PROFILES",
+    "CgmesDocument",
+    "CgmesFileHeader",
     "CgmesHeader",
+    "CgmesReadError",
     "CgmesReport",
     "CgmesWriteError",
+    "read_cgmes",
     "to_cgmes_strings",
     "write_cgmes",
 ]
@@ -545,3 +576,449 @@ def write_cgmes(
         for kw, data in docs.items():
             (target / report.files[kw]).write_bytes(data)
     return report
+
+
+# --------------------------------------------------------------------------------------
+# reader
+# --------------------------------------------------------------------------------------
+
+
+class CgmesReadError(CimXmlError):
+    """Raised for unreadable sources and malformed files, and for any problem when
+    ``strict=True``."""
+
+
+def _parse_time(text: str | None) -> _dt.datetime | None:
+    if not text:
+        return None
+    try:
+        return _dt.datetime.fromisoformat(text.strip())
+    except ValueError:
+        return None
+
+
+@dataclass
+class CgmesFileHeader:
+    """The ``md:FullModel`` header of one file of a CGMES set (strings as written)."""
+
+    file: str
+    about: str | None = None  # model id, ``urn:uuid:...``
+    created: _dt.datetime | None = None
+    scenario_time: _dt.datetime | None = None
+    description: str | None = None
+    modeling_authority_set: str | None = None
+    version: str | None = None
+    profile_uris: tuple[str, ...] = ()  # every ``md:Model.profile``
+    profiles: tuple[str, ...] = ()  # keywords of the known URIs, in set order
+    dependent_on: tuple[str, ...] = ()
+    supersedes: tuple[str, ...] = ()
+    raw: dict[str, Any] = field(default_factory=dict)  # header as `read_cimxml` returns it
+
+    @property
+    def model_id(self) -> str | None:
+        return self.about
+
+
+@dataclass
+class CgmesDocument(CimDocument):
+    """Result of `read_cgmes`: one merged graph (`objects`, `by_id`, `warnings`, `dangling` as in
+    `CimDocument`) plus the header of every file."""
+
+    headers: dict[str, CgmesFileHeader] = field(default_factory=dict)  # file name -> header
+    profile_set: ProfileSet | None = None
+
+    @property
+    def profiles(self) -> tuple[str, ...]:
+        """Keywords of the profiles present in the set (known ``md:Model.profile`` URIs)."""
+        present = {kw for h in self.headers.values() for kw in h.profiles}
+        order = self.profile_set.keywords if self.profile_set is not None else ()
+        return tuple(sorted(present, key=lambda k: (order.index(k) if k in order else 99, k)))
+
+    @property
+    def headers_by_profile(self) -> dict[str, list[CgmesFileHeader]]:
+        """Keyword -> headers of the files carrying that profile (several when e.g. two TSOs'
+        EQ files were read together; a file with two profiles appears under both)."""
+        out: dict[str, list[CgmesFileHeader]] = {}
+        for kw in self.profiles:
+            out[kw] = [h for h in self.headers.values() if kw in h.profiles]
+        return out
+
+    def header_for_rewrite(self) -> CgmesHeader:
+        """A `CgmesHeader` that makes `write_cgmes` reproduce this set's headers: model ids,
+        DependentOn / Supersedes, times, description, version and the profile URIs. Uses the
+        first file of each profile, and the file's first profile as its keyword (a file with EQ
+        and SC URIs gives ``profile_uris["EQ"]=[SC uri]``). Pass ``profiles=`` explicitly when
+        writing; automatic dependencies are switched off."""
+        by_kw: dict[str, CgmesFileHeader] = {}
+        for h in self.headers.values():
+            if h.profiles and h.profiles[0] not in by_kw:
+                by_kw[h.profiles[0]] = h
+        pset = self.profile_set
+        base = next(iter(by_kw.values()), None)
+        scalars = {
+            "created": base.created if base else None,
+            "scenario_time": base.scenario_time if base else None,
+            "description": base.description if base else None,
+            "modeling_authority_set": (base.modeling_authority_set if base else None)
+            or DEFAULT_MAS,
+            "version": (base.version if base else None) or "1",
+        }
+        model_ids: dict[str, str] = {}
+        dep: dict[str, list[str]] = {}
+        sup: dict[str, list[str]] = {}
+        uris: dict[str, list[str]] = {}
+        overrides: dict[str, dict[str, Any]] = {}
+        for kw, h in by_kw.items():
+            if h.about:
+                model_ids[kw] = h.about
+            dep[kw] = list(h.dependent_on)
+            sup[kw] = list(h.supersedes)
+            own = pset.by_keyword(kw).uri if pset is not None else None
+            uris[kw] = [u for u in h.profile_uris if u != own]
+            diff = {
+                k: v
+                for k, v in {
+                    "created": h.created,
+                    "scenario_time": h.scenario_time,
+                    "description": h.description,
+                    "modeling_authority_set": h.modeling_authority_set,
+                    "version": h.version,
+                }.items()
+                if v is not None and v != scalars[k]
+            }
+            if diff:
+                overrides[kw] = diff
+        return CgmesHeader(
+            scenario_time=scalars["scenario_time"],
+            created=scalars["created"],
+            modeling_authority_set=scalars["modeling_authority_set"],
+            description=scalars["description"],
+            version=scalars["version"],
+            model_ids=model_ids,
+            dependent_on=dep,
+            supersedes=sup,
+            profile_uris=uris,
+            overrides=overrides,
+            auto_dependencies=False,
+        )
+
+
+# -- sources ------------------------------------------------------------------------
+
+
+_MAX_ZIP_DEPTH = 3
+
+
+def _is_xml_name(name: str) -> bool:
+    base = name.rpartition("/")[2]
+    return name.lower().endswith(".xml") and not base.startswith(".")
+
+
+def _zip_members(data: Any, label: str, depth: int) -> Iterator[tuple[str, bytes | str]]:
+    try:
+        zf = zipfile.ZipFile(data)
+    except zipfile.BadZipFile as e:
+        raise CgmesReadError(f"{label}: not a zip file: {e}") from e
+    with zf:
+        for info in zf.infolist():
+            name = info.filename
+            if info.is_dir() or name.startswith("__MACOSX/"):
+                continue
+            if _is_xml_name(name):
+                yield name, zf.read(info)
+            elif name.lower().endswith(".zip") and depth < _MAX_ZIP_DEPTH:
+                yield from _zip_members(io.BytesIO(zf.read(info)), f"{label}/{name}", depth + 1)
+
+
+def _from_path(path: Path) -> Iterator[tuple[str, bytes | str]]:
+    if path.is_dir():
+        for child in sorted(path.iterdir()):
+            low = child.name.lower()
+            if child.is_file() and not child.name.startswith("."):
+                if low.endswith(".xml"):
+                    yield child.name, child.read_bytes()
+                elif low.endswith(".zip"):
+                    yield from _zip_members(child, str(child), 1)
+    elif path.suffix.lower() == ".zip":
+        yield from _zip_members(path, str(path), 1)
+    else:
+        yield path.name, path.read_bytes()
+
+
+def _from_item(name: Any, data: Any) -> tuple[str, bytes | str]:
+    if hasattr(data, "read"):
+        data = data.read()
+    if not isinstance(data, bytes | str):
+        raise TypeError(f"CGMES source {name!r}: expected bytes or str, got {type(data).__name__}")
+    return str(name), data
+
+
+def _gather(sources: Any) -> list[tuple[str, bytes | str]]:
+    if isinstance(sources, str | os.PathLike):
+        items = list(_from_path(Path(sources)))
+    elif isinstance(sources, Mapping):
+        items = [_from_item(k, v) for k, v in sources.items()]
+    else:
+        items = []
+        for it in sources:
+            if isinstance(it, str | os.PathLike):
+                items.extend(_from_path(Path(it)))
+            else:
+                try:
+                    name, data = it
+                except (TypeError, ValueError):
+                    raise TypeError(f"not a path or a (name, data) pair: {it!r}") from None
+                items.append(_from_item(name, data))
+    out: list[tuple[str, bytes | str]] = []
+    seen: dict[str, int] = {}
+    for name, data in items:  # file names key the headers: make them unique
+        n = seen.get(name, 0)
+        seen[name] = n + 1
+        out.append((name if n == 0 else f"{name} ({n + 1})", data))
+    return out
+
+
+# -- the reader ---------------------------------------------------------------------
+
+
+@dataclass
+class _Entry:
+    file: str
+    el: ET.Element
+    cls: type
+    defines: bool
+    profiles: tuple[Profile, ...]
+
+
+def _kws(profiles: Sequence[Profile]) -> str:
+    return "+".join(p.keyword for p in profiles)
+
+
+class _CgmesReader(_Reader):
+    def __init__(self, strict: bool, pset: ProfileSet) -> None:
+        super().__init__(strict)
+        self.error_cls = CgmesReadError
+        self.pset = pset
+        self.cdoc = CgmesDocument(profile_set=pset)
+        self.doc = self.cdoc
+        self._gaps: set[str] = set()
+        self._profiles: tuple[Profile, ...] = ()
+        self._el_cls: type | None = None
+
+    # -- headers --------------------------------------------------------------------
+
+    def _file_header(
+        self, name: str, el: ET.Element | None
+    ) -> tuple[CgmesFileHeader, tuple[Profile, ...]]:
+        if el is None:
+            self.warn(
+                f"{name}: no md:FullModel header, properties are not checked against a profile"
+            )
+            return CgmesFileHeader(name), ()
+        raw = self._read_header(el)
+
+        def many(key: str) -> tuple[str, ...]:
+            v = raw.get(key)
+            vals = [] if v is None else (v if isinstance(v, list) else [v])
+            return tuple(str(x).strip() for x in vals)
+
+        uris = many("profile")
+        profiles: list[Profile] = []
+        for uri in uris:
+            try:
+                p = self.pset.by_uri(uri)
+            except KeyError:
+                self.warn(f"{name}: unknown profile URI {uri!r}")
+                continue
+            if p not in profiles:
+                profiles.append(p)
+        profiles.sort(key=lambda p: self.pset.profiles.index(p))
+        empty = [p for p in profiles if not p.class_names]  # DY: the OWL source is empty
+        if empty:
+            self.warn(
+                f"{name}: profile(s) {_kws(empty)} have no classes in the profile set, "
+                f"so the file is not checked against them"
+            )
+
+        def one(key: str) -> str | None:
+            v = raw.get(key)
+            return str(v[0] if isinstance(v, list) else v) if v is not None else None
+
+        header = CgmesFileHeader(
+            file=name,
+            about=raw.get("about"),
+            created=_parse_time(one("created")),
+            scenario_time=_parse_time(one("scenarioTime")),
+            description=one("description"),
+            modeling_authority_set=one("modelingAuthoritySet"),
+            version=one("version"),
+            profile_uris=uris,
+            profiles=tuple(p.keyword for p in profiles),
+            dependent_on=many("DependentOn"),
+            supersedes=many("Supersedes"),
+            raw=raw,
+        )
+        return header, tuple(p for p in profiles if p.class_names)
+
+    # -- read -----------------------------------------------------------------------
+
+    def read_files(self, files: list[tuple[str, ET.Element]]) -> CgmesDocument:
+        doc = self.cdoc
+        by_key: dict[str, list[_Entry]] = {}
+        for name, root in files:
+            if root.tag != _RDF_ROOT:
+                raise CgmesReadError(f"{name}: root element is {root.tag!r}, expected rdf:RDF")
+            header, profiles = self._file_header(name, root.find(f"{{{MD_NS}}}FullModel"))
+            doc.headers[name] = header
+            for el in root:
+                ns, local = _split(el.tag)
+                if ns == MD_NS and local == "FullModel":
+                    continue
+                cls = resolve_class(local)
+                if cls is None:
+                    self.warn(f"unknown class {local!r}: elements skipped")
+                    continue
+                ref = el.get(_RDF_ID) or el.get(_RDF_ABOUT) or el.get(_RDF_NODE_ID)
+                if not ref:
+                    self.warn(f"{local} element without rdf:ID/rdf:about skipped")
+                    continue
+                if profiles and not any(p.has_class(cls) for p in profiles):
+                    self.warn(f"class {local!r} is not in profile(s) {_kws(profiles)}")
+                defines = bool(el.get(_RDF_ID)) or not profiles
+                if not defines:  # rdf:about of a class the file's profile defines (non-NCName ids)
+                    defines = any(
+                        p.is_concrete(cls) and not p.is_description(cls) for p in profiles
+                    )
+                by_key.setdefault(normalize_id(ref), []).append(
+                    _Entry(name, el, cls, defines, profiles)
+                )
+        # -- objects: one per id, class from the defining element -------------------
+        for key, entries in by_key.items():
+            cls = self._object_class(key, entries)
+            plan = class_plan(cls)
+            obj = cls(mrid=key) if plan.mrid_name else cls()  # type: ignore[operator]
+            for attr in plan.defaulted:  # absent means unset, not "constructor default"
+                setattr(obj, attr, None)
+            doc.by_id[key] = obj
+            doc.objects.append(obj)
+        # -- properties --------------------------------------------------------------
+        for key, entries in by_key.items():
+            obj = doc.by_id[key]
+            for e in entries:
+                self._profiles = e.profiles
+                self._el_cls = e.cls
+                self._apply(obj, e.el, reset=False)
+        self._check_mrids()
+        self.finish()
+        return doc
+
+    def _check_mrids(self) -> None:
+        """An ``IdentifiedObject.mRID`` element wins over the id; one that differs from the id
+        is reported, and one that another object already has is dropped (the id stays)."""
+        by_id = self.cdoc.by_id
+        used: dict[str, str] = {}
+        odd: list[tuple[str, CimObject]] = []
+        for key, obj in by_id.items():
+            mrid = getattr(obj, "mrid", None)
+            if mrid == key:
+                used[key] = key
+            elif isinstance(mrid, str):
+                odd.append((key, obj))
+        for key, obj in odd:
+            mrid = obj.mrid  # type: ignore[attr-defined]
+            name = type(obj).__name__
+            if mrid in used:
+                self.warn(
+                    f"{name} {key!r}: mRID {mrid!r} is also the mRID of {used[mrid]!r}; "
+                    f"kept the id as mRID"
+                )
+                obj.mrid = key  # type: ignore[attr-defined]
+                used.setdefault(key, key)
+            else:
+                self.warn(f"{name} {key!r}: mRID element {mrid!r} differs from the id")
+                used[mrid] = key
+
+    def _object_class(self, key: str, entries: list[_Entry]) -> type:
+        defs = [e for e in entries if e.defines]
+        if defs:
+            cls = defs[0].cls
+            for d in defs[1:]:
+                if d.cls is not cls:
+                    self.warn(
+                        f"id {key!r} defined as {cls.__name__} and {d.cls.__name__}; "
+                        f"merged into the first"
+                    )
+                else:
+                    self.warn(f"{cls.__name__} defined more than once; merged")
+        else:
+            cls = max(
+                (e.cls for e in entries), key=lambda c: len(c.__mro__)
+            )  # the most specific class described
+            self.warn(f"object only described (no definition): created as {cls.__name__}")
+        for e in entries:
+            if not issubclass(cls, e.cls):
+                self.warn(
+                    f"id {key!r} is a {cls.__name__} but {e.file} describes it as {e.cls.__name__}"
+                )
+        return cls
+
+    # -- property classification ------------------------------------------------------
+
+    def _spec_for(self, plan: ClassPlan, prop: str) -> AttrSpec | EndSpec | None:
+        spec = plan.by_prop.get(prop)
+        if spec is None and prop in plan.static_props:
+            return None
+        profiles = self._profiles
+        if profiles and self._el_cls is not None:
+            info = next(
+                (i for i in (p.property(self._el_cls, prop) for p in profiles) if i is not None),
+                None,
+            )
+            if info is not None and info.python_name is None:
+                key = f"known SDK gap: {info.qname} has no SDK member"
+                if key not in self._gaps:
+                    self._gaps.add(key)
+                    self.warn(key)
+                return None
+            if (
+                info is None
+                and spec is not None
+                and any(p.has_class(self._el_cls) for p in profiles)
+            ):
+                self.warn(
+                    f"property {prop!r} of {self._el_cls.__name__} is not in profile(s) "
+                    f"{_kws(profiles)}"
+                )
+        if spec is None:
+            self.warn(f"unknown property {prop!r} on {plan.cim_name}")
+        return spec
+
+
+def _profile_set(profile_set: Any) -> ProfileSet:
+    if profile_set is None:
+        return _default_set()
+    inner = getattr(profile_set, "profile_set", None)  # the ``cgmes3`` facade module
+    return inner if isinstance(inner, ProfileSet) else profile_set  # type: ignore[no-any-return]
+
+
+def read_cgmes(
+    sources: Any, *, strict: bool = False, profile_set: ProfileSet | Any | None = None
+) -> CgmesDocument:
+    """Read a CGMES file set into one merged object graph.
+
+    `sources` is a directory (its ``.xml`` and ``.zip`` files), a ``.zip`` file, an ``.xml``
+    path, an iterable of paths, a mapping ``{name: bytes | str}`` or an iterable of
+    ``(name, bytes | str)`` pairs. All files are merged by id (see the module docstring), so the
+    order of the files does not matter. `profile_set` defaults to CGMES 3.0 (`cgmes3`). Problems
+    (unknown classes, properties outside the file's profiles, SDK gaps, unknown profile URIs, bad
+    literals, dangling references) are collected in ``warnings``; ``strict=True`` raises
+    `CgmesReadError` at the first. Malformed XML always raises.
+    """
+    pset = _profile_set(profile_set)
+    files: list[tuple[str, ET.Element]] = []
+    for name, data in _gather(sources):
+        try:
+            files.append((name, ET.XML(data)))
+        except ET.ParseError as e:
+            raise CgmesReadError(f"{name}: not well-formed XML: {e}") from e
+    return _CgmesReader(strict, pset).read_files(files)
