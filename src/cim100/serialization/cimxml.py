@@ -17,6 +17,13 @@ XML NCName (e.g. ``a#b``) is written ``rdf:about="#_<percent-encoded mrid>"`` an
 same way; the reader decodes it. Strings with XML-invalid control characters raise ``ValueError``
 at write time (``\\r`` is preserved as ``&#13;``). A compound attribute is written with
 ``rdf:parseType="Resource"``; an enum value as ``rdf:resource="<ns>Enum.literal"``.
+
+CGMES European extensions use the ``eu`` prefix (``http://iec.ch/TC57/CIM100-European#``) for
+their classes, members and enum values, e.g. ``<eu:BoundaryPoint>``,
+``<eu:IdentifiedObject.shortName>`` inside a ``<cim:ACLineSegment>``, and
+``rdf:resource="http://iec.ch/TC57/CIM100-European#LimitKind.patl"``. ``xmlns:eu`` is declared
+only when the document has such an element. The reader matches local names and ignores the
+namespace of class and property elements.
 """
 
 from __future__ import annotations
@@ -29,8 +36,10 @@ import xml.etree.ElementTree as ET
 from cim100._runtime import CimCompound, CimEnum, CimObject
 from cim100.serialization._common import (
     CIM_NS,
+    NAMESPACES,
     AttrSpec,
     CimDocument,
+    ClassPlan,
     EndSpec,
     ReaderBase,
     assign_ids,
@@ -102,9 +111,7 @@ def _write_value(el: ET.Element, value: Any, namespace: str, where: str, prop: s
         for s in plan.attrs:
             v = getattr(value, s.name, None)
             if v is not None:
-                _write_value(
-                    ET.SubElement(el, "cim:" + s.prop), v, namespace, where, f"{prop}/{s.prop}"
-                )
+                _write_value(ET.SubElement(el, s.qname), v, namespace, where, f"{prop}/{s.prop}")
     else:
         el.text = _xml_text(value, where, prop)
 
@@ -147,14 +154,14 @@ def _build(
     warned: set[str] = set()
     for obj in objs:
         plan = class_plan(type(obj))
-        el = ET.SubElement(root, "cim:" + plan.cim_name, dict([refs[obj][0]]))
+        el = ET.SubElement(root, plan.qname, dict([refs[obj][0]]))
         where = f"{plan.cim_name} {ids[obj]!r}"
         for a in plan.attrs:
             if a.is_id:
                 continue
             v = getattr(obj, a.name, None)
             if v is not None:
-                _write_value(ET.SubElement(el, "cim:" + a.prop), v, namespace, where, a.prop)
+                _write_value(ET.SubElement(el, a.qname), v, namespace, where, a.prop)
         for e in plan.ends:
             if not (e.writes or write_both_ends):
                 continue
@@ -163,13 +170,25 @@ def _build(
                 targets = sorted((t for t in v if t in order), key=order.__getitem__)
             else:
                 targets = [v] if v is not None and v in order else []
-            tag = "cim:" + e.prop
+            tag = e.qname
             if targets:
                 warn_roleless(e, warned)
             for t in targets:
                 ET.SubElement(el, tag, {"rdf:resource": refs[t][1]})
+    _declare_extra_namespaces(root)
     ET.indent(root, space="  ")
     return root
+
+
+def _declare_extra_namespaces(root: ET.Element) -> None:
+    """Add ``xmlns:<prefix>`` (after ``xmlns:cim``) for every other model prefix in use."""
+    used = {el.tag.partition(":")[0] for el in root.iter() if ":" in el.tag}
+    extra = sorted(p for p in used if p != "cim" and p in NAMESPACES)
+    if extra:
+        attrib = {"xmlns:cim": root.attrib.pop("xmlns:cim")}
+        attrib.update({f"xmlns:{p}": NAMESPACES[p] for p in extra})
+        attrib.update(root.attrib)
+        root.attrib = attrib
 
 
 def _wire_ids(ident: str) -> tuple[tuple[str, str], str]:
@@ -303,24 +322,39 @@ class _Reader(ReaderBase):
 
     # -- pass 2 ---------------------------------------------------------------------
 
-    def _apply(self, obj: CimObject, el: ET.Element) -> None:
+    def _spec_for(self, plan: ClassPlan, prop: str) -> AttrSpec | EndSpec | None:
+        """The attribute or end named by a property tag, or None (after a warning)."""
+        spec = plan.by_prop.get(prop)
+        if spec is None and prop not in plan.static_props:
+            self.warn(f"unknown property {prop!r} on {plan.cim_name}")
+        return spec
+
+    def _apply(self, obj: CimObject, el: ET.Element, *, reset: bool = True) -> None:
         plan = class_plan(type(obj))
-        for name in plan.defaulted:  # absent means unset, not "constructor default"
-            setattr(obj, name, None)
+        if reset:
+            for name in plan.defaulted:  # absent means unset, not "constructor default"
+                setattr(obj, name, None)
         src = el.get(_RDF_ID) or el.get(_RDF_ABOUT) or el.get(_RDF_NODE_ID) or ""
         for child in el:
             _, prop = _split(child.tag)
-            spec = plan.by_prop.get(prop)
+            spec = self._spec_for(plan, prop)
             if spec is None:
-                if prop not in plan.static_props:
-                    self.warn(f"unknown property {prop!r} on {plan.cim_name}")
                 continue
             if isinstance(spec, EndSpec):
                 self._link(obj, spec, child, normalize_id(src))
                 continue
             value = self._value(child, spec, f"{plan.cim_name}: {prop}")
             if value is not None:
-                setattr(obj, spec.name, value)
+                self._set_attr(obj, spec, value)
+
+    def _set_attr(self, obj: CimObject, spec: AttrSpec, value: Any) -> None:
+        setattr(obj, spec.name, value)
+
+    def _set_link(self, obj: CimObject, spec: EndSpec, target: CimObject) -> None:
+        if spec.many:
+            spec.desc.add(obj, target)  # type: ignore[attr-defined]
+        else:
+            setattr(obj, spec.name, target)
 
     def _link(self, obj: CimObject, spec: EndSpec, child: ET.Element, src: str) -> None:
         ref = child.get(_RDF_RESOURCE) or child.get(_RDF_NODE_ID)
@@ -333,10 +367,7 @@ class _Reader(ReaderBase):
             self.warn(f"dangling reference in {spec.prop}")
             return
         try:
-            if spec.many:
-                spec.desc.add(obj, target)  # type: ignore[attr-defined]
-            else:
-                setattr(obj, spec.name, target)
+            self._set_link(obj, spec, target)
         except TypeError as e:
             self.warn(f"cannot link {spec.prop}: {e}")
 

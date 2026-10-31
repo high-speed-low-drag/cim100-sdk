@@ -42,7 +42,10 @@ Followed from the DIGIN convention
 Inferred (the convention is silent) and mirrored from CIMXML
     * Namespace: ``cim`` maps to ``namespace`` (default ``CIM_NS``, the CIM100 namespace, where
       DIGIN uses its own ``https://cim.ucaiug.io/ns#``); the reader treats any prefix that maps to
-      a CIM namespace (or ``cim``) as the CIM vocabulary.
+      a CIM namespace (or ``cim``/``eu``) as the CIM vocabulary.
+    * CGMES European extensions use the prefix ``eu`` (``http://iec.ch/TC57/CIM100-European#``):
+      ``"@type": "eu:BoundaryPoint"``, ``"eu:IdentifiedObject.shortName"``,
+      ``{"@id": "eu:LimitKind.patl"}``. The context gets ``eu`` only when the document uses it.
     * Association direction, sorting, generated ids and property naming are those of
       `cim100.serialization._common`. A single-valued end is one ``{"@id"}`` object; a
       many-valued end is always an array (also with one target).
@@ -77,6 +80,7 @@ from decimal import Decimal
 from cim100._runtime import CimCompound, CimEnum, CimObject
 from cim100.serialization._common import (
     CIM_NS,
+    NAMESPACES,
     AttrSpec,
     CimDocument,
     EndSpec,
@@ -136,18 +140,22 @@ def _typed(text: str, xsd_type: str) -> dict[str, str]:
     return {"@value": text, "@type": xsd_type}
 
 
-def _jvalue(value: Any, namespace_prefix: str) -> Any:
-    """JSON form of an attribute value (see the module docstring)."""
+def _jvalue(value: Any, used: set[str]) -> Any:
+    """JSON form of an attribute value (see the module docstring); namespace prefixes of the
+    written names are added to `used`."""
     if isinstance(value, CimEnum):
-        return {"@id": enum_resource(value, namespace_prefix)}
+        used.add(value._cim_meta.namespace)
+        return {"@id": enum_resource(value, compact=True)}
     if isinstance(value, CimCompound):
         out: dict[str, Any] = {}
         plan = class_plan(type(value))
-        out["@type"] = "cim:" + plan.cim_name
+        out["@type"] = plan.qname
+        used.add(plan.ns)
         for s in plan.attrs:
             v = getattr(value, s.name, None)
             if v is not None:
-                out["cim:" + s.prop] = _jvalue(v, namespace_prefix)
+                out[s.qname] = _jvalue(v, used)
+                used.add(s.ns)
         return out
     if isinstance(value, bool | int | str):
         return value
@@ -241,14 +249,17 @@ def to_jsonld_dict(
         doc.update(_header_dict(header))
     wire = {o: _wire_id(ids[o], isinstance(getattr(o, "mrid", None), str)) for o in objs}
     warned: set[str] = set()
+    used: set[str] = set()
     graph: list[dict[str, Any]] = []
     for obj in objs:
         plan = class_plan(type(obj))
-        node: dict[str, Any] = {"@id": wire[obj], "@type": "cim:" + plan.cim_name}
+        node: dict[str, Any] = {"@id": wire[obj], "@type": plan.qname}
+        used.add(plan.ns)
         for a in plan.attrs:
             v = getattr(obj, a.name, None)
             if v is not None:
-                node["cim:" + a.prop] = _jvalue(v, "cim:")
+                node[a.qname] = _jvalue(v, used)
+                used.add(a.ns)
         for e in plan.ends:
             if not (e.writes or write_both_ends):
                 continue
@@ -258,11 +269,18 @@ def to_jsonld_dict(
                 if not targets:
                     continue
                 warn_roleless(e, warned)
-                node["cim:" + e.prop] = [{"@id": wire[t]} for t in targets]
+                node[e.qname] = [{"@id": wire[t]} for t in targets]
+                used.add(e.ns)
             elif v is not None and v in order:
                 warn_roleless(e, warned)
-                node["cim:" + e.prop] = {"@id": wire[v]}
+                node[e.qname] = {"@id": wire[v]}
+                used.add(e.ns)
         graph.append(node)
+    extra = sorted(p for p in used if p != "cim" and p in NAMESPACES)
+    if extra:  # declare after "cim"
+        rest = {k: v for k, v in context.items() if k != "cim"}
+        context.clear()
+        context.update({"cim": namespace, **{p: NAMESPACES[p] for p in extra}, **rest})
     doc["@graph"] = graph
     return doc
 
@@ -369,7 +387,7 @@ class _Reader(ReaderBase):
         self._prop_cache.clear()
 
     def _is_cim_prefix(self, prefix: str) -> bool:
-        if prefix == "cim":
+        if prefix in ("cim", "eu"):
             return True
         ns = self.prefixes.get(prefix)
         if ns is None:

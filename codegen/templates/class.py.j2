@@ -38,6 +38,9 @@ class {{ name }}({{ base }}):
             upper={{ e.upper }},
             inverse={{ e.inverse }},
             aggregation={{ e.aggregation }},
+{% if e.namespace %}
+            namespace={{ e.namespace }},
+{% endif %}
         )
     )
 {% endfor %}
@@ -52,6 +55,9 @@ class {{ name }}({{ base }}):
 {% endif %}
 {% if deprecated %}
         deprecated=True,
+{% endif %}
+{% if namespace %}
+        namespace={{ namespace }},
 {% endif %}
 {% if meta_attrs %}
         attributes=({% for m in meta_attrs %}{{ m }}, {% endfor %}),

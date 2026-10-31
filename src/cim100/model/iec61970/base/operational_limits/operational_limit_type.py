@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from typing import Any, Self
 
+    from cim100.model.european.ext_iec61970.ext_eu_base.ext_eu_operational_limits.limit_kind import (
+        LimitKind,
+    )
     from cim100.model.iec61970.base.operational_limits.operational_limit import OperationalLimit
     from cim100.model.iec61970.base.operational_limits.operational_limit_direction_kind import (
         OperationalLimitDirectionKind,
@@ -29,11 +32,13 @@ class OperationalLimitType(IdentifiedObject):
         "acceptable_duration",
         "direction",
         "is_infinite_duration",
+        "kind",
     )
 
     acceptable_duration: float | None  # Seconds
     direction: OperationalLimitDirectionKind | None
     is_infinite_duration: bool | None
+    kind: LimitKind | None
 
     target_operational_limitm_type_scaling: One[OperatonalLimitTypeScaling] = One(
         EndMeta(
@@ -82,6 +87,7 @@ class OperationalLimitType(IdentifiedObject):
                 "direction", "direction", "OperationalLimitDirectionKind", 0, 1, "enumeration"
             ),
             AttrMeta("is_infinite_duration", "isInfiniteDuration", "bool", 0, 1, "primitive"),
+            AttrMeta("kind", "kind", "LimitKind", 0, 1, "enumeration", namespace="eu"),
         ),
         ends=(
             target_operational_limitm_type_scaling.meta,
@@ -96,6 +102,7 @@ class OperationalLimitType(IdentifiedObject):
         acceptable_duration: float | None = None,
         direction: OperationalLimitDirectionKind | None = None,
         is_infinite_duration: bool | None = None,
+        kind: LimitKind | None = None,
         target_operational_limitm_type_scaling: OperatonalLimitTypeScaling | None = None,
         source_operational_limit_type_scaling: Iterable[OperatonalLimitTypeScaling] | None = None,
         operational_limit: Iterable[OperationalLimit] | None = None,
@@ -105,6 +112,7 @@ class OperationalLimitType(IdentifiedObject):
         self.acceptable_duration = acceptable_duration
         self.direction = direction
         self.is_infinite_duration = is_infinite_duration
+        self.kind = kind
         if target_operational_limitm_type_scaling is not None:
             self.target_operational_limitm_type_scaling = target_operational_limitm_type_scaling
         if source_operational_limit_type_scaling is not None:

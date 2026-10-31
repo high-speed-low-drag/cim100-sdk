@@ -6,7 +6,9 @@ Everything is keyed by classifier GUID, never by name.
 Naming rules (all deterministic):
 
 * `snake()` converts CIM names to snake_case (see its docstring).
-* Class module: ``cim100.model.<package segments snake-cased>.<snake(py_name)>``.
+* Class module: ``cim100.model.<package segments snake-cased>.<snake(py_name)>``; the root
+  package ``TC57CIM`` is dropped and ``EuropeanCIMExtensions`` (the CGMES ``eu`` extensions)
+  becomes ``european``.
 * Duplicate class names: the canonical copy is the most referenced one (attribute
   types + association-end targets); ties prefer a package without an ``Inf*`` /
   ``Doc*`` segment, then the lowest GUID. Other copies in a package that already
@@ -17,6 +19,8 @@ Naming rules (all deterministic):
   attribute (`overrides=<guid>`), association-end collision (rename the later end by
   appending ``_<inverse role>``, or ``_<target class>`` if that still collides).
   Anything else raises `NormalizeError` listing every occurrence.
+* Namespaces: every resolved class, enum, attribute and end keeps the IR namespace prefix
+  (``cim``/``eu``). A class name used in two namespaces raises `NormalizeError`.
 """
 
 from __future__ import annotations
@@ -26,11 +30,16 @@ import keyword
 import math
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from codegen.ir import Association, Classifier, Model
+from codegen.ir import DEFAULT_NAMESPACE, Association, Classifier, Model, merge
 
 MODULE_ROOT = "cim100.model"
 ROOT_PACKAGE = "TC57CIM"
+# IR root package -> leading module segments under cim100.model
+ROOT_MODULES = {ROOT_PACKAGE: (), "EuropeanCIMExtensions": ("european",)}
+SNAPSHOT = Path(__file__).parent / "snapshot" / "cim100_ir.json"
+EU_SNAPSHOT = Path(__file__).parent / "snapshot" / "eu_ir.json"
 
 PRIMITIVE_PY = {
     "Float": "float",
@@ -168,6 +177,7 @@ class RAttribute:
     # False when an override re-declares the ancestor attribute with a different, non-narrowing
     # type; the generator treats it as a redeclared annotation.
     override_compatible: bool = True
+    namespace: str = DEFAULT_NAMESPACE
 
 
 @dataclass(frozen=True)
@@ -189,6 +199,7 @@ class RAssocEnd:
     generated_role: bool = False  # role name was missing in the model
     renamed_from: str | None = None  # py_name before collision renaming
     rename_reason: str | None = None
+    namespace: str = DEFAULT_NAMESPACE  # of the association
 
 
 @dataclass(frozen=True)
@@ -215,6 +226,7 @@ class RClass:
     notes: str
     attributes: tuple[RAttribute, ...] = ()
     ends: tuple[RAssocEnd, ...] = ()
+    namespace: str = DEFAULT_NAMESPACE
 
 
 @dataclass(frozen=True)
@@ -229,6 +241,7 @@ class REnum:
     notes: str
     literals: tuple[RLiteral, ...] = ()
     kind: str = "enumeration"
+    namespace: str = DEFAULT_NAMESPACE
 
 
 @dataclass(frozen=True)
@@ -264,10 +277,11 @@ class ResolvedModel:
 
 
 def _package_segments(package: str) -> list[str]:
+    """Module segments (not yet snake-cased) for an IR package path."""
     parts = package.split("/")
-    if parts[0] != ROOT_PACKAGE:
-        raise NormalizeError(f"package {package!r} is not under {ROOT_PACKAGE}")
-    return parts[1:]
+    if parts[0] not in ROOT_MODULES:
+        raise NormalizeError(f"package {package!r} is not under {' or '.join(ROOT_MODULES)}")
+    return [*ROOT_MODULES[parts[0]], *parts[1:]]
 
 
 def _module_segment(seg: str) -> str:
@@ -306,6 +320,10 @@ def _resolve_classes(model: Model):
     dup_rows: list[tuple] = []
     for name in sorted(by_name):
         group = by_name[name]
+        if len({c.namespace for c in group}) > 1:
+            raise NormalizeError(
+                f"class name {name!r} is used in namespaces {sorted({c.namespace for c in group})}"
+            )
         base = sanitize_ident(name)
         if len(group) == 1:
             py_name[group[0].guid] = base
@@ -472,6 +490,7 @@ def normalize(model: Model) -> ResolvedModel:
                 deprecated=c.deprecated,
                 notes=c.notes,
                 literals=_resolve_literals(c),
+                namespace=c.namespace,
             )
 
     # primitive python types
@@ -630,7 +649,7 @@ def normalize(model: Model) -> ResolvedModel:
                     py_type=ptype, value_py_type=vtype, lower=a.lower, upper=a.upper,
                     default=default, is_static=is_static, deprecated=a.deprecated, notes=a.notes,
                     overrides=overrides, rename_reason=reason,
-                    override_compatible=compatible,
+                    override_compatible=compatible, namespace=a.namespace,
                 )
             )
 
@@ -712,6 +731,7 @@ def normalize(model: Model) -> ResolvedModel:
                     inverse=(inv.owner, inv.py_name), aggregation=e.aggregation, notes=e.notes,
                     methods=e.methods, generated_role=e.generated,
                     renamed_from=e.renamed_from, rename_reason=e.rename_reason,
+                    namespace=assoc_by_guid[e.assoc].namespace,
                 )
             )
         classes.append(
@@ -720,7 +740,7 @@ def normalize(model: Model) -> ResolvedModel:
                 package=c.package, kind=c.kind, superclass_guid=c.superclass,
                 ancestors=ancestors[c.guid], is_canonical=canonical[c.guid],
                 deprecated=c.deprecated, notes=c.notes,
-                attributes=tuple(res_attrs[c.guid]), ends=tuple(rends),
+                attributes=tuple(res_attrs[c.guid]), ends=tuple(rends), namespace=c.namespace,
             )
         )
     classes.sort(key=lambda r: (r.module, r.guid))
@@ -779,8 +799,18 @@ def normalize(model: Model) -> ResolvedModel:
     return ResolvedModel(classes=tuple(classes), enums=tuple(enum_list), report=report)
 
 
-def load_snapshot(path: str | None = None) -> Model:
-    from pathlib import Path
-
-    p = Path(path) if path else Path(__file__).parent / "snapshot" / "cim100_ir.json"
+def load_snapshot(path: str | Path | None = None) -> Model:
+    """The CIM100 IR snapshot (codegen/snapshot/cim100_ir.json) only."""
+    p = Path(path) if path else SNAPSHOT
     return Model.from_json(p.read_text(encoding="utf-8"))
+
+
+def load_eu_snapshot(path: str | Path | None = None) -> Model:
+    """The CGMES European extension IR (codegen/snapshot/eu_ir.json, see tools/dump_eu_ir.py)."""
+    p = Path(path) if path else EU_SNAPSHOT
+    return Model.from_json(p.read_text(encoding="utf-8"))
+
+
+def load_model() -> Model:
+    """What the code is generated from: the CIM100 snapshot merged with the eu extensions."""
+    return merge(load_snapshot(), load_eu_snapshot())

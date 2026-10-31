@@ -16,7 +16,8 @@ from tests.sdk.test_completeness import check
 def test_end_integrity(owned_ends):
     """The inverse exists on the target (or an ancestor), points back, and targets the owner."""
     f = []
-    assert len(owned_ends) == 2748
+    assert len(owned_ends) == 2748 + 6  # CIM100 + eu
+    assert sum(e.namespace == "eu" for _, e in owned_ends) == 6
     for owner, e in owned_ends:
         where = f"{owner.__name__}.{e.name}"
         target = resolve(e.target)
@@ -26,6 +27,8 @@ def test_end_integrity(owned_ends):
             continue
         if inv.meta.inverse != e.name:
             f.append(f"{where}: inverse's inverse is {inv.meta.inverse!r}")
+        if inv.meta.namespace != e.namespace:
+            f.append(f"{where}: namespace {e.namespace} != inverse's {inv.meta.namespace}")
         if not issubclass(owner, resolve(inv.meta.target)):
             f.append(f"{where}: inverse targets {inv.meta.target}, not the owner or an ancestor")
         if getattr(owner, e.name).meta is not e:

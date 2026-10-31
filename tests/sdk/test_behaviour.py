@@ -70,8 +70,8 @@ def test_link_unlink_every_association(ir, resolved, by_guid):
                     f.append(f"{where}: unlink from the owner side after inverse link is not clean")
             except Exception as exc:  # noqa: BLE001 - collect, do not stop at the first failure
                 f.append(f"{where}: {type(exc).__name__}: {exc}")
-    assert n_assoc == 1374
-    assert n_links == 2748
+    assert n_assoc == 1374 + 3  # CIM100 + eu
+    assert n_links == 2748 + 6
     check(f)
 
 

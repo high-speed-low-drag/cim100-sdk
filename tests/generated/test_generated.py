@@ -28,9 +28,11 @@ def classes() -> dict[str, type]:
 
 
 def test_registry_shape(classes):
-    assert len(_registry.BY_GUID) == 1937
+    assert len(_registry.BY_GUID) == 1937 + 4  # CIM100 + eu (3 classes, LimitKind)
+    assert sum(".model.european." in r for r in _registry.BY_GUID.values()) == 4
     assert set(_registry.BY_NAME.values()) <= set(_registry.BY_GUID.values())
     assert _registry.MODEL_VERSIONS["IEC61970CIMVersion"] == "IEC61970CIM17v40"
+    assert _registry.MODEL_VERSIONS["ExtIEC61970Version"] == "3.0"
     for guid, cls in classes.items():
         assert cls._cim_meta.guid == guid
 

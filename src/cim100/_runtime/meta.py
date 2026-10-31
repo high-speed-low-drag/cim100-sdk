@@ -4,6 +4,11 @@ Every generated class carries ``_cim_meta: ClassMeta`` describing only what the
 class itself declares. `all_metas`, `cim_attributes` and `cim_ends` merge the
 metas along the MRO (base first; a re-declared attribute replaces the inherited
 one in place).
+
+Namespaces: `ClassMeta`, `AttrMeta` and `EndMeta` carry ``namespace``, the RDF namespace prefix
+of their CIM name (a key of `NAMESPACES`; default ``"cim"``). The CGMES European extensions are
+``"eu"``: classes such as ``BoundaryPoint`` and members added to CIM classes such as
+``IdentifiedObject.shortName``. A member's namespace is its own, not its class's.
 """
 
 from __future__ import annotations
@@ -42,11 +47,17 @@ class _Frozen:
 
 _set = object.__setattr__
 
+CIM = "cim"
+NAMESPACES: dict[str, str] = {
+    "cim": "http://iec.ch/TC57/CIM100#",
+    "eu": "http://iec.ch/TC57/CIM100-European#",
+}
+
 
 class AttrMeta(_Frozen):
     """One UML attribute. Attributes typed by a CIMDatatype hold the plain value."""
 
-    __slots__ = ("name", "cim_name", "py_type", "lower", "upper", "kind", "default", "static", "deprecated")  # noqa: RUF023
+    __slots__ = ("name", "cim_name", "py_type", "lower", "upper", "kind", "default", "static", "deprecated", "namespace")  # noqa: RUF023
 
     name: str  # Python attribute name
     cim_name: str
@@ -57,6 +68,7 @@ class AttrMeta(_Frozen):
     default: Any  # the Python default value (enum member, number, str) or None
     static: bool  # class-level constant: not a slot and not an __init__ parameter
     deprecated: bool
+    namespace: str  # prefix in NAMESPACES
 
     def __init__(
         self,
@@ -69,6 +81,7 @@ class AttrMeta(_Frozen):
         default: Any = None,
         static: bool = False,
         deprecated: bool = False,
+        namespace: str = CIM,
     ) -> None:
         _set(self, "name", name)
         _set(self, "cim_name", cim_name)
@@ -79,12 +92,13 @@ class AttrMeta(_Frozen):
         _set(self, "default", default)
         _set(self, "static", static)
         _set(self, "deprecated", deprecated)
+        _set(self, "namespace", namespace)
 
 
 class EndMeta(_Frozen):
     """One association end owned by a class."""
 
-    __slots__ = ("name", "cim_role", "target", "many", "lower", "upper", "inverse", "aggregation", "deprecated")  # noqa: RUF023
+    __slots__ = ("name", "cim_role", "target", "many", "lower", "upper", "inverse", "aggregation", "deprecated", "namespace")  # noqa: RUF023
 
     name: str  # Python attribute name of the end
     cim_role: str | None
@@ -95,6 +109,7 @@ class EndMeta(_Frozen):
     inverse: str  # Python name of the end on the target class that points back
     aggregation: str  # none / shared / composite
     deprecated: bool
+    namespace: str  # prefix in NAMESPACES (of the association, the same on both ends)
 
     def __init__(
         self,
@@ -107,6 +122,7 @@ class EndMeta(_Frozen):
         inverse: str,
         aggregation: str = "none",
         deprecated: bool = False,
+        namespace: str = CIM,
     ) -> None:
         _set(self, "name", name)
         _set(self, "cim_role", cim_role)
@@ -117,12 +133,13 @@ class EndMeta(_Frozen):
         _set(self, "inverse", inverse)
         _set(self, "aggregation", aggregation)
         _set(self, "deprecated", deprecated)
+        _set(self, "namespace", namespace)
 
 
 class ClassMeta(_Frozen):
     """What one class declares itself (not inherited members)."""
 
-    __slots__ = ("cim_name", "package", "guid", "kind", "deprecated", "attributes", "ends")  # noqa: RUF023
+    __slots__ = ("cim_name", "package", "guid", "kind", "deprecated", "attributes", "ends", "namespace")  # noqa: RUF023
 
     cim_name: str
     package: str
@@ -131,6 +148,7 @@ class ClassMeta(_Frozen):
     deprecated: bool
     attributes: tuple[AttrMeta, ...]
     ends: tuple[EndMeta, ...]
+    namespace: str  # prefix in NAMESPACES
 
     def __init__(
         self,
@@ -141,6 +159,7 @@ class ClassMeta(_Frozen):
         deprecated: bool = False,
         attributes: tuple[AttrMeta, ...] = (),
         ends: tuple[EndMeta, ...] = (),
+        namespace: str = CIM,
     ) -> None:
         _set(self, "cim_name", cim_name)
         _set(self, "package", package)
@@ -149,6 +168,7 @@ class ClassMeta(_Frozen):
         _set(self, "deprecated", deprecated)
         _set(self, "attributes", tuple(attributes))
         _set(self, "ends", tuple(ends))
+        _set(self, "namespace", namespace)
 
 
 _metas_cache: dict[type, tuple[ClassMeta, ...]] = {}

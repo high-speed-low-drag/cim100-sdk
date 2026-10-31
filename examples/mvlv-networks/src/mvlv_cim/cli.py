@@ -7,6 +7,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from mvlv_cim import cgmes
 from mvlv_cim.builder import build_network
 from mvlv_cim.export import DEFAULT_SOURCE, FORMATS, export_network, find_workbooks
 
@@ -35,18 +36,42 @@ def _parser() -> argparse.ArgumentParser:
         sp.add_argument("--all", action="store_true", help="all networks (default if none given)")
         sp.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
 
-    e = sub.add_parser("export", help="write CIMXML and/or JSON-LD files")
+    e = sub.add_parser("export", help="write CIMXML, JSON-LD and/or a CGMES 3.0 file set")
     common(e)
-    e.add_argument("--format", choices=["cimxml", "jsonld", "both"], default="both")
+    e.add_argument(
+        "--format",
+        choices=["cimxml", "jsonld", "both", "cgmes", "all"],
+        default="both",
+        help="both = cimxml + jsonld; cgmes = EQ/SSH/TP files per network; all = all three",
+    )
     e.add_argument("--out", type=Path, default=Path("out"))
     e.add_argument("--created", help="header timestamp (default: source file mtime)")
+    _cgmes_args(e)
     v = sub.add_parser("verify", help="round-trip check against a fresh build")
     common(v)
     v.add_argument("--out", type=Path, default=Path("out"))
     v.add_argument("--created")
+    v.add_argument(
+        "--cgmes", action="store_true", help="also validate and round-trip the CGMES set"
+    )
+    _cgmes_args(v, zip_option=False)
     s = sub.add_parser("summary", help="object counts per class")
     common(s)
     return p
+
+
+def _cgmes_args(sp: argparse.ArgumentParser, zip_option: bool = True) -> None:
+    sp.add_argument(
+        "--gl",
+        action="store_true",
+        help="CGMES: also write the GL profile (Location, PositionPoint, CoordinateSystem)",
+    )
+    if zip_option:
+        sp.add_argument("--zip", action="store_true", help="CGMES: one .zip per network")
+
+
+def _profiles(args: argparse.Namespace) -> tuple[str, ...]:
+    return cgmes.GL_PROFILES if args.gl else cgmes.PROFILES
 
 
 def _select(args: argparse.Namespace):
@@ -54,10 +79,29 @@ def _select(args: argparse.Namespace):
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
-    formats = list(FORMATS) if args.format == "both" else [args.format]
+    plain = {
+        "both": list(FORMATS),
+        "all": list(FORMATS),
+        "cimxml": ["cimxml"],
+        "jsonld": ["jsonld"],
+    }
+    formats = plain.get(args.format, [])
     for wb in _select(args):
-        for f, p in export_network(wb, args.out, formats, args.created).items():
+        for f, p in export_network(wb, args.out, formats, args.created).items() if formats else ():
             print(f"{wb.stem} [{f}] -> {p} ({p.stat().st_size / 1e6:.1f} MB)")
+        if args.format in ("cgmes", "all"):
+            res = cgmes.export_cgmes(
+                wb, args.out, profiles=_profiles(args), zip_file=args.zip, created=args.created
+            )
+            sizes = ", ".join(f"{kw} {n / 1e6:.1f} MB" for kw, n in res.sizes.items())
+            print(f"{wb.stem} [cgmes] -> {res.target} ({sizes})")
+            print(
+                f"  {res.n_objects} objects, validate_profile: {len(res.errors)} errors, "
+                f"{len(res.warnings)} warnings; not carried: {sum(res.dropped.values())} "
+                f"values/objects ({len(res.dropped)} kinds, see docs/EXPORT_REPORT.md)"
+            )
+            for issue in res.errors[:5]:
+                print(f"  error: {issue}")
     return 0
 
 
@@ -66,7 +110,12 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 
     bad = 0
     for wb in _select(args):
-        r = verify_network(wb, args.out, created=args.created)
+        r = verify_network(
+            wb,
+            args.out,
+            created=args.created,
+            cgmes_profiles=_profiles(args) if args.cgmes else None,
+        )
         print(f"{wb.stem}: {r.n_objects} objects, cross-format equal: {r.cross_equal}")
         for f, fr in r.formats.items():
             print(
@@ -78,6 +127,18 @@ def _cmd_verify(args: argparse.Namespace) -> int:
                 print(f"    warning: {w}")
             if fr.diff:
                 print("    " + fr.diff.replace("\n", "\n    "))
+        if r.cgmes:
+            c = r.cgmes
+            print(
+                f"  cgmes   {'+'.join(c.profiles)} {sum(c.sizes.values()) / 1e6:6.1f} MB "
+                f"write {c.write_s:5.1f}s read {c.read_s:5.1f}s equal={c.equal} "
+                f"deterministic={c.deterministic} errors={len(c.errors)} "
+                f"warnings={len(c.read_warnings)} dangling={c.dangling}"
+            )
+            for msg in [*c.errors[:5], *c.read_warnings[:5]]:
+                print(f"    {msg}")
+            if c.diff:
+                print("    " + c.diff.replace("\n", "\n    "))
         print(f"  {'OK' if r.ok else 'FAILED'}")
         bad += not r.ok
     return 1 if bad else 0

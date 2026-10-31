@@ -20,10 +20,24 @@ Object ids
     written with a generated id comes back with ``mrid="gen<N>"``, because the id is all that
     the file holds.)
 
+Namespaces
+    Every class, attribute and end has a namespace prefix (``ClassMeta``/``AttrMeta``/
+    ``EndMeta.namespace``; `NAMESPACES` maps prefixes to URIs). ``cim`` is the CIM100 namespace,
+    which a writer may replace with its ``namespace`` argument; ``eu`` is the CGMES European
+    extensions (``http://iec.ch/TC57/CIM100-European#``, never replaced). A member's prefix is its
+    own, not its class's: ``eu:BoundaryPoint`` has ``eu:BoundaryPoint.fromEndIsoCode`` and the
+    inherited ``cim:IdentifiedObject.name``; the CIM class ``ACLineSegment`` has the European
+    ``eu:IdentifiedObject.shortName``; an end of a European association
+    (``eu:WindGeneratingUnit.WindPowerPlant``) is ``eu`` on both sides. `ClassPlan.qname`,
+    `AttrSpec.qname` and `EndSpec.qname` hold the prefixed names. Writers declare a prefix other
+    than ``cim`` only when the document uses it. Readers match classes and properties by local
+    name (``BoundaryPoint``, ``IdentifiedObject.shortName``) whatever their prefix, so documents
+    that put the extensions in another namespace still read.
+
 Property names
-    ``<DeclaringClassCimName>.<cimName>`` where the declaring class is the class whose
-    ``_cim_meta`` declares the attribute or end (may be an ancestor; for an override, the
-    overriding class). An end uses its CIM role name. The model declares 66 ends without a CIM
+    ``<DeclaringClassCimName>.<cimName>`` (written with the member's prefix, see Namespaces)
+    where the declaring class is the class whose ``_cim_meta`` declares the attribute or end
+    (may be an ancestor; for an override, the overriding class). An end uses its CIM role name. The model declares 66 ends without a CIM
     role; 33 of them are the end an association is written from, and only those are written
     under the generated Python name of the end, e.g. ``AssemblyManifest.model_part_versions``
     (the other 33 are the non-writing side, whose partner end has a role). This is not standard
@@ -49,7 +63,8 @@ Values
     value, decoding follows the declared type (``AttrMeta.py_type``; for a CIMDatatype
     attribute the datatype's ``value_type``, because the attribute holds the plain value).
     An enum member is the resource ``<ns><EnumCimName>.<literal>`` where literal is
-    ``member.value`` (the exact CIM spelling). A compound is nested: a blank node holding the
+    ``member.value`` (the exact CIM spelling) and ns is the URI of the enum's own namespace
+    (``eu:LimitKind.patl`` is ``http://iec.ch/TC57/CIM100-European#LimitKind.patl``). A compound is nested: a blank node holding the
     compound's own properties ``<CompoundCimName>.<cimName>``, recursively.
 
 Associations
@@ -82,6 +97,7 @@ from enum import Enum
 from urllib.parse import quote, unquote
 
 from cim100._runtime import (
+    NAMESPACES,
     CimCompound,
     CimDatatype,
     CimEnum,
@@ -99,10 +115,13 @@ if TYPE_CHECKING:
     from cim100._runtime.ends import _End
     from cim100._runtime.meta import AttrMeta
 
-CIM_NS = "http://iec.ch/TC57/CIM100#"
+CIM_NS = NAMESPACES["cim"]
+EU_NS = NAMESPACES["eu"]
 
 __all__ = [
     "CIM_NS",
+    "EU_NS",
+    "NAMESPACES",
     "AttrSpec",
     "CimDocument",
     "ClassPlan",
@@ -122,6 +141,7 @@ __all__ = [
     "is_uuid",
     "is_write_end",
     "literal_text",
+    "namespace_uri",
     "normalize_id",
     "resolve_class",
     "resolve_property",
@@ -246,9 +266,22 @@ def decode_literal(text: str, type_name: str) -> Any:
 # --------------------------------------------------------------------------------------
 
 
-def enum_resource(member: Enum, namespace: str = CIM_NS) -> str:
-    """``<ns><EnumCimName>.<literal>`` for an enum member."""
-    return f"{namespace}{_cim_name(type(member))}.{member.value}"
+def namespace_uri(prefix: str, cim_namespace: str = CIM_NS) -> str:
+    """The URI of a namespace prefix; ``cim`` gives `cim_namespace` (a writer's ``namespace``)."""
+    return cim_namespace if prefix == "cim" else NAMESPACES[prefix]
+
+
+def _ns_of(cls: type) -> str:
+    return cls._cim_meta.namespace  # type: ignore[attr-defined, no-any-return]
+
+
+def enum_resource(member: Enum, namespace: str = CIM_NS, *, compact: bool = False) -> str:
+    """``<ns><EnumCimName>.<literal>`` for an enum member, ns being the URI of the enum's
+    namespace (`namespace` stands for ``cim``); ``compact=True`` gives ``<prefix>:<Enum>.<lit>``."""
+    prefix = _ns_of(type(member))
+    if compact:
+        return f"{prefix}:{_cim_name(type(member))}.{member.value}"
+    return f"{namespace_uri(prefix, namespace)}{_cim_name(type(member))}.{member.value}"
 
 
 def _strip_ns(resource: str, namespace: str | None) -> str:
@@ -299,8 +332,10 @@ class AttrSpec:
         "kind",
         "meta",
         "name",
+        "ns",
         "owner",
         "prop",
+        "qname",
         "type_name",
     )
 
@@ -310,6 +345,8 @@ class AttrSpec:
         self.cim_name = meta.cim_name
         self.owner = owner
         self.prop = f"{owner}.{meta.cim_name}"
+        self.ns = meta.namespace
+        self.qname = f"{self.ns}:{self.prop}"
         self.kind = meta.kind
         self.type_name = meta.py_type
         self.is_id = meta.cim_name == "mRID" and owner == "IdentifiedObject"
@@ -332,7 +369,7 @@ class AttrSpec:
 class EndSpec:
     """One association end of a class."""
 
-    __slots__ = ("desc", "many", "meta", "name", "owner", "prop", "role", "writes")
+    __slots__ = ("desc", "many", "meta", "name", "ns", "owner", "prop", "qname", "role", "writes")
 
     def __init__(self, desc: _End[Any], owner: str) -> None:
         self.desc = desc
@@ -342,6 +379,8 @@ class EndSpec:
         self.owner = owner
         self.role = desc.meta.cim_role or desc.meta.name
         self.prop = f"{owner}.{self.role}"
+        self.ns = desc.meta.namespace
+        self.qname = f"{self.ns}:{self.prop}"
         self.writes = is_write_end(desc)
 
 
@@ -357,12 +396,16 @@ class ClassPlan:
         "ends",
         "many_descs",
         "mrid_name",
+        "ns",
         "one_descs",
+        "qname",
         "static_props",
     )
 
     cls: type
     cim_name: str
+    ns: str  # namespace prefix of the class
+    qname: str  # ``<ns>:<cim_name>``
     attrs: tuple[AttrSpec, ...]  # writable attributes, sorted by property name
     ends: tuple[EndSpec, ...]  # sorted by property name
     by_prop: dict[str, AttrSpec | EndSpec]  # includes ancestor-qualified names of overrides
@@ -409,6 +452,8 @@ def class_plan(cls: type) -> ClassPlan:
     plan = ClassPlan.__new__(ClassPlan)
     plan.cls = cls
     plan.cim_name = _cim_name(cls)
+    plan.ns = _ns_of(cls)
+    plan.qname = f"{plan.ns}:{plan.cim_name}"
     plan.attrs = attrs
     plan.ends = tuple(ends)
     plan.by_prop = by_prop

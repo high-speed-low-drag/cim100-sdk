@@ -1,4 +1,7 @@
-"""Shared, session-scoped fixtures: the IR, the resolved model and every generated class."""
+"""Shared, session-scoped fixtures: the IR, the resolved model and every generated class.
+
+`ir` is what the code is generated from: the CIM100 snapshot merged with the CGMES European
+extensions (codegen/snapshot/eu_ir.json, namespace ``eu``)."""
 
 from __future__ import annotations
 
@@ -9,10 +12,9 @@ import pytest
 
 from cim100 import _registry
 from codegen.ir import Model
-from codegen.normalize import normalize
+from codegen.normalize import load_model, normalize
 
 ROOT = Path(__file__).resolve().parents[2]
-SNAPSHOT = ROOT / "codegen" / "snapshot" / "cim100_ir.json"
 
 
 def load_ref(ref: str) -> type:
@@ -22,7 +24,7 @@ def load_ref(ref: str) -> type:
 
 @pytest.fixture(scope="session")
 def ir() -> Model:
-    return Model.from_json(SNAPSHOT.read_text())
+    return load_model()
 
 
 @pytest.fixture(scope="session")

@@ -438,9 +438,10 @@ def test_digin_style_snippet():
         "DependentOn": "urn:uuid:e766c722-d2db-41cc-93e4-74b1f161c13a",
         "dcterms:title": "Telemark-120-LV1_EQ",
     }
-    text = "\n".join(doc.warnings)
-    # the eu: extension is not CIM, and the asset datasheet is not in the document
-    assert "eu:Equipment.networkAnalysisEnabled" in text
+    # eu: is read as CIM vocabulary by local name (C2), so DIGIN's eu:Equipment.networkAnalysisEnabled
+    # lands on the CIM100 attribute; the asset datasheet is not in the document
+    assert line.network_analysis_enabled is True
+    assert not any("networkAnalysisEnabled" in w for w in doc.warnings)
     assert any(
         "dangling reference in PowerSystemResource.AssetDatasheet" in w for w in doc.warnings
     )

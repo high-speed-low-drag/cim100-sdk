@@ -15,7 +15,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from codegen.ir import Model
+from codegen.ir import DEFAULT_NAMESPACE, Model
 from codegen.normalize import MODULE_ROOT, RAssocEnd, RAttribute, RClass, REnum, ResolvedModel
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -285,6 +285,8 @@ class Generator:
             parts.append("static=True")
         if a.deprecated:
             parts.append("deprecated=True")
+        if a.namespace != DEFAULT_NAMESPACE:
+            parts.append(f"namespace={q(a.namespace)}")
         imp.rt_names.add("AttrMeta")
         return f"AttrMeta({', '.join(parts)})"
 
@@ -423,6 +425,7 @@ class Generator:
                     "upper": "None" if e.upper is None else e.upper,
                     "inverse": q(inverse),
                     "aggregation": q(e.aggregation),
+                    "namespace": "" if e.namespace == DEFAULT_NAMESPACE else q(e.namespace),
                 }
             )
             if e.many:
@@ -442,12 +445,15 @@ class Generator:
         if params:
             imp.typing_names.add("Any")
 
-        header = f"CIM {_KIND_WORD[kind]} {c.cim_name} ({c.package}). Generated code: do not edit."
+        header = (
+            f"{_ORIGIN[c.namespace]} {_KIND_WORD[kind]} {c.cim_name} ({c.package}). "
+            "Generated code: do not edit."
+        )
         return {
             "header": _escape(header),
             "name": c.py_name,
             "base": base,
-            "doc": docstring(c.notes, f"CIM {_KIND_WORD[kind]} {c.cim_name}."),
+            "doc": docstring(c.notes, f"{_ORIGIN[c.namespace]} {_KIND_WORD[kind]} {c.cim_name}."),
             "slots": _tuple_literal(sorted(own_slots, key=natural_key)),
             "statics": statics,
             "attrs": attrs,
@@ -458,6 +464,7 @@ class Generator:
             "guid": q(c.guid),
             "kind_arg": q(kind) if kind != "class" else "",
             "deprecated": c.deprecated,
+            "namespace": "" if c.namespace == DEFAULT_NAMESPACE else q(c.namespace),
             "meta_attrs": meta_attrs,
             "end_names": end_names,
             "params": params,
@@ -519,15 +526,17 @@ class Generator:
     def build_enum(self, e: REnum) -> str:
         return self.env.get_template("enum.py.j2").render(
             header=_escape(
-                f"CIM enumeration {e.cim_name} ({e.package}). Generated code: do not edit."
+                f"{_ORIGIN[e.namespace]} enumeration {e.cim_name} ({e.package}). "
+                "Generated code: do not edit."
             ),
             name=e.py_name,
-            doc=docstring(e.notes, f"CIM enumeration {e.cim_name}."),
+            doc=docstring(e.notes, f"{_ORIGIN[e.namespace]} enumeration {e.cim_name}."),
             literals=[{"name": lit.py_name, "value": q(lit.cim_value)} for lit in e.literals],
             cim_name=q(e.cim_name),
             package=q(e.package),
             guid=q(e.guid),
             deprecated=e.deprecated,
+            namespace="" if e.namespace == DEFAULT_NAMESPACE else q(e.namespace),
         )
 
     # -- registry -----------------------------------------------------------
@@ -579,6 +588,7 @@ class Generator:
 
 
 _KIND_WORD = {"class": "class", "cimdatatype": "datatype", "compound": "compound"}
+_ORIGIN = {DEFAULT_NAMESPACE: "CIM", "eu": "CGMES European extension"}
 
 
 def _escape(s: str) -> str:

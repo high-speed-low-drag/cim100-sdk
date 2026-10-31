@@ -26,18 +26,29 @@ def check(failures: list[str], limit: int = 40) -> None:
     assert not failures, f"{len(failures)} failures:\n" + "\n".join(failures[:limit])
 
 
+# (CIM100, eu) counts: non-enum classes, enums, attributes, literals, associations
+TOTALS = {"cim": (1532, 405, 6334, 3211, 1374), "eu": (3, 1, 11, 11, 3)}
+
+
 def test_totals(ir, by_guid):
-    kinds = [c.kind for c in ir.classifiers]
-    assert kinds.count("class") + kinds.count("cimdatatype") + kinds.count("compound") == 1532
-    assert kinds.count("enumeration") == 405
-    assert sum(len(c.attributes) for c in ir.classifiers if c.kind != "enumeration") == 6334
-    assert sum(len(c.literals) for c in ir.classifiers) == 3211
-    assert len(ir.associations) == 1374
-    assert sum(len(c._cim_meta.ends) for c in by_guid.values()) == 2748
-    assert sum(len(c._cim_meta.attributes) for c in by_guid.values()) == 6334
-    assert sum(1 for c in by_guid.values() if issubclass(c, CimEnum)) == 405
-    assert sum(1 for c in by_guid.values() if not issubclass(c, CimEnum)) == 1532
-    assert sum(len(list(c.__members__)) for c in by_guid.values() if issubclass(c, CimEnum)) == 3211
+    for ns, (n_cls, n_enum, n_attr, n_lit, n_assoc) in TOTALS.items():
+        cls = [c for c in ir.classifiers if c.namespace == ns]
+        kinds = [c.kind for c in cls]
+        assert kinds.count("class") + kinds.count("cimdatatype") + kinds.count("compound") == n_cls
+        assert kinds.count("enumeration") == n_enum
+        attrs = [a for c in ir.classifiers if c.kind != "enumeration" for a in c.attributes]
+        assert sum(a.namespace == ns for a in attrs) == n_attr
+        assert sum(len(c.literals) for c in cls) == n_lit
+        assert sum(a.namespace == ns for a in ir.associations) == n_assoc
+        gen = [c for c in by_guid.values() if c._cim_meta.namespace == ns]
+        assert sum(1 for c in gen if issubclass(c, CimEnum)) == n_enum
+        assert sum(1 for c in gen if not issubclass(c, CimEnum)) == n_cls
+        assert sum(len(list(c.__members__)) for c in gen if issubclass(c, CimEnum)) == n_lit
+        metas = [m for c in by_guid.values() for m in c._cim_meta.attributes]
+        assert sum(m.namespace == ns for m in metas) == n_attr
+        ends = [e for c in by_guid.values() for e in c._cim_meta.ends]
+        assert sum(e.namespace == ns for e in ends) == 2 * n_assoc
+    assert {c.namespace for c in ir.classifiers} == set(TOTALS)
 
 
 def test_classifier_identity(ir, by_guid):
@@ -53,8 +64,9 @@ def test_classifier_identity(ir, by_guid):
         if meta is None:
             f.append(f"{c.name}: no own _cim_meta")
             continue
-        if (meta.guid, meta.cim_name, meta.package, meta.kind) != (guid, c.name, c.package, c.kind):
-            f.append(f"{c.name}: meta {(meta.guid, meta.cim_name, meta.package, meta.kind)} != IR {(guid, c.name, c.package, c.kind)}")
+        got = (meta.guid, meta.cim_name, meta.package, meta.kind, meta.namespace)
+        if got != (guid, c.name, c.package, c.kind, c.namespace):
+            f.append(f"{c.name}: meta {got} != IR {(guid, c.name, c.package, c.kind, c.namespace)}")
         if not issubclass(cls, KIND_BASE[c.kind]):
             f.append(f"{c.name}: {cls.__mro__} lacks base for kind {c.kind}")
         if cls.__module__.rsplit(".", 1)[0] != cls.__module__.rsplit(".", 1)[0]:
@@ -122,10 +134,10 @@ def test_attributes(ir, by_guid, ir_classifiers):
                 continue
             t = ir_classifiers[a.type_guid]
             want_type = PRIM_PY[t.name] if t.kind == "primitive" else t.name
-            if (m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated) != (
-                a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated
-            ):
-                f.append(f"{c.name}.{a.name}: {(m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated)} != {(a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated)}")
+            got = (m.lower, m.upper, m.py_type, m.kind, m.static, m.deprecated, m.namespace)
+            want = (a.lower, a.upper, want_type, t.kind, a.is_static, a.deprecated, a.namespace)
+            if got != want:
+                f.append(f"{c.name}.{a.name}: {got} != {want}")
             if not _default_ok(c.name, m, a, by_guid):
                 f.append(f"{c.name}.{a.name}: default {m.default!r} != IR {a.default!r}")
     assert USED_QUIRKS == KNOWN_MODEL_QUIRKS, "stale entries in KNOWN_MODEL_QUIRKS"
@@ -152,7 +164,7 @@ def test_enums(ir, by_guid, resolved):
             if cls(m.value) is not m:
                 f.append(f"{c.name}.{m.name}: lookup by value fails")
                 break
-    assert total == 3211
+    assert total == 3211 + 11  # CIM100 + eu (LimitKind)
     check(f)
 
 
@@ -186,7 +198,9 @@ def test_associations_produce_two_ends(ir, by_guid, resolved):
             many = end.upper is None or end.upper > 1
             if (m.lower, m.upper, m.many) != (end.lower, end.upper, many):
                 f.append(f"{owner.__name__}.{m.name}: card {(m.lower, m.upper, m.many)} != {(end.lower, end.upper, many)}")
-    assert n == 2748
+            if m.namespace != assoc.namespace:
+                f.append(f"{owner.__name__}.{m.name}: namespace {m.namespace} != {assoc.namespace}")
+    assert n == 2748 + 6  # CIM100 + eu
     actual = {(cls._cim_meta.guid, e.name) for cls in by_guid.values() for e in cls._cim_meta.ends}
     if actual != expected_keys:
         f.append(f"extra/missing ends: {sorted(actual ^ expected_keys)[:5]}")

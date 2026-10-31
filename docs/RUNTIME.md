@@ -73,6 +73,9 @@ hold classes, never instances.
    `static=True` only when set. `py_type` is `RAttribute.py_type`, `kind` is `type_kind`.
    A deprecated attribute or end adds `deprecated=True` (keyword, only when true) to its
    `AttrMeta` / `EndMeta`, as for `ClassMeta`; the flag is metadata only, the runtime ignores it.
+   Likewise a class, enum, attribute or end outside the CIM100 namespace adds
+   `namespace="<prefix>"` (keyword, last; omitted for the default `"cim"`), e.g. `namespace="eu"`
+   for the CGMES European extensions; `cim100._runtime.NAMESPACES` maps prefixes to URIs.
 5. `__init__(self, *, <own attributes>, <own ends>, **kwargs: Any) -> None`, in the order of
    `RClass.attributes` then `RClass.ends`, every parameter defaulting to the model default or
    `None`. Body: `super().__init__(**kwargs)`, then `self.<attr> = <attr>` for each attribute,

@@ -18,15 +18,18 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from codegen.generate import generate
-from codegen.normalize import load_snapshot, normalize
+from codegen.normalize import load_model, normalize
 
 PKG = ROOT / "src" / "cim100"
 OUTPUTS = ("model", "_registry.py")
 
 
 def build(outdir: Path) -> None:
-    """Generate into `outdir` (laid out like src/cim100) and run ruff format on it."""
-    model = load_snapshot()
+    """Generate into `outdir` (laid out like src/cim100) and run ruff format on it.
+
+    The input is the CIM100 IR snapshot merged with the CGMES European extensions
+    (codegen/snapshot/eu_ir.json), see `codegen.normalize.load_model`."""
+    model = load_model()
     generate(normalize(model), model, outdir)
     cmd = [sys.executable, "-m", "ruff", "format", "--config", str(ROOT / "pyproject.toml"), "-q"]
     subprocess.run([*cmd, str(outdir)], check=True)
